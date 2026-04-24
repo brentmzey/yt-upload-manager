@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { LayoutDashboard, Video, Radio, Users, Settings, LogOut, Search, Bell, Menu, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LayoutDashboard, Video, Radio, Users, Settings, LogOut, Search, Bell, Menu, X, Cpu, Activity } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from '../lib/env';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -23,8 +25,36 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, active, onClick 
   </div>
 );
 
-export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+interface DashboardLayoutProps {
+  children: React.ReactNode;
+  activePage: string;
+  onPageChange: (page: string) => void;
+}
+
+export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, activePage, onPageChange }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [systemStatus, setSystemStatus] = useState<{ cpu_usage: number, active_jobs: number } | null>(null);
+
+  useEffect(() => {
+    if (isTauri()) {
+      const fetchStatus = async () => {
+        try {
+          const status = await invoke<{ cpu_usage: number, active_jobs: number }>('get_system_status');
+          setSystemStatus(status);
+        } catch (e) {
+          console.error('Failed to fetch system status', e);
+        }
+      };
+      fetchStatus();
+      const interval = setInterval(fetchStatus, 5000);
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  const handleNav = (page: string) => {
+    onPageChange(page);
+    setIsMobileMenuOpen(false);
+  };
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans text-slate-900 dark:text-slate-100 transition-colors duration-300">
@@ -36,12 +66,12 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         </div>
         
         <nav className="flex-1 space-y-1">
-          <SidebarItem icon={<LayoutDashboard size={20} />} label="Dashboard" active />
-          <SidebarItem icon={<Video size={20} />} label="Uploads" />
-          <SidebarItem icon={<Radio size={20} />} label="Live Streams" />
-          <SidebarItem icon={<Users size={20} />} label="Channels" />
+          <SidebarItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activePage === 'dashboard'} onClick={() => handleNav('dashboard')} />
+          <SidebarItem icon={<Video size={20} />} label="Uploads" active={activePage === 'uploads'} onClick={() => handleNav('uploads')} />
+          <SidebarItem icon={<Radio size={20} />} label="Live Streams" active={activePage === 'live'} onClick={() => handleNav('live')} />
+          <SidebarItem icon={<Users size={20} />} label="Channels" active={activePage === 'channels'} onClick={() => handleNav('channels')} />
           <div className="pt-8 pb-2 px-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Admin</div>
-          <SidebarItem icon={<Settings size={20} />} label="Settings" />
+          <SidebarItem icon={<Settings size={20} />} label="Settings" active={activePage === 'settings'} onClick={() => handleNav('settings')} />
         </nav>
 
         <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -73,12 +103,12 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           </div>
           
           <nav className="flex-1 space-y-1">
-            <SidebarItem icon={<LayoutDashboard size={20} />} label="Dashboard" active onClick={() => setIsMobileMenuOpen(false)} />
-            <SidebarItem icon={<Video size={20} />} label="Uploads" onClick={() => setIsMobileMenuOpen(false)} />
-            <SidebarItem icon={<Radio size={20} />} label="Live Streams" onClick={() => setIsMobileMenuOpen(false)} />
-            <SidebarItem icon={<Users size={20} />} label="Channels" onClick={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activePage === 'dashboard'} onClick={() => handleNav('dashboard')} />
+            <SidebarItem icon={<Video size={20} />} label="Uploads" active={activePage === 'uploads'} onClick={() => handleNav('uploads')} />
+            <SidebarItem icon={<Radio size={20} />} label="Live Streams" active={activePage === 'live'} onClick={() => handleNav('live')} />
+            <SidebarItem icon={<Users size={20} />} label="Channels" active={activePage === 'channels'} onClick={() => handleNav('channels')} />
             <div className="pt-8 pb-2 px-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Admin</div>
-            <SidebarItem icon={<Settings size={20} />} label="Settings" onClick={() => setIsMobileMenuOpen(false)} />
+            <SidebarItem icon={<Settings size={20} />} label="Settings" active={activePage === 'settings'} onClick={() => handleNav('settings')} />
           </nav>
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -109,6 +139,19 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
           </div>
           
           <div className="flex items-center space-x-3 md:space-x-6">
+            {systemStatus && (
+              <div className="hidden lg:flex items-center space-x-4 px-4 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-1.5">
+                  <Cpu size={14} className="text-blue-500" />
+                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{systemStatus.cpu_usage.toFixed(1)}%</span>
+                </div>
+                <div className="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
+                <div className="flex items-center gap-1.5">
+                  <Activity size={14} className="text-green-500" />
+                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{systemStatus.active_jobs} Jobs</span>
+                </div>
+              </div>
+            )}
             <ThemeToggle />
             <button className="relative text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 transition-colors p-2">
               <Bell size={20} />

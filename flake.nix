@@ -28,6 +28,7 @@
           (rust-bin.stable.latest.default.override { extensions = [ "rust-src" ]; })
           nodejs_22
           bun
+          pocketbase
           pkg-config
           libiconv
           darwin.apple_sdk.frameworks.Security
