@@ -10,7 +10,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "migrate": "bun scripts/migrate.ts"
   },
   "dependencies": {
     "@astrojs/react": "^5.0.4",
@@ -23,6 +24,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "astro": "^6.1.9",
+    "brotli-wasm": "^3.0.1",
     "effect": "^3.21.2",
     "lucide-react": "^1.9.0",
     "pocketbase": "^0.26.8",

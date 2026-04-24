@@ -1,5 +1,6 @@
 import { Effect, Context, Layer } from 'effect';
-import { info, warn, error, debug, trace } from '@tauri-apps/plugin-log';
+import * as tauriLog from '@tauri-apps/plugin-log';
+import { isTauri } from './env';
 
 export interface LoggerService {
   readonly info: (message: string, context?: Record<string, unknown>) => Effect.Effect<void>;
@@ -11,7 +12,7 @@ export interface LoggerService {
 
 export const LoggerService = Context.GenericTag<LoggerService>('LoggerService');
 
-// Global event bus for UI logs (Simple approach for React consumption)
+// Global event bus for UI logs
 export type UILogEntry = { level: 'info' | 'warn' | 'error', message: string, detail?: string, timestamp: number };
 export const uiLogListeners: Set<(entry: UILogEntry) => void> = new Set();
 
@@ -23,33 +24,66 @@ const emitToUI = (level: 'info' | 'warn' | 'error', message: string, detail?: st
   uiLogListeners.forEach(listener => listener(entry));
 };
 
-export const LoggerServiceLive = Layer.succeed(
+// --- TAURI IMPLEMENTATION ---
+export const LoggerServiceTauri = Layer.succeed(
   LoggerService,
   {
     info: (message, context) => 
       Effect.sync(() => {
-        info(formatMessage(message, context));
+        tauriLog.info(formatMessage(message, context));
         emitToUI('info', message);
       }),
     warn: (message, context) => 
       Effect.sync(() => {
-        warn(formatMessage(message, context));
+        tauriLog.warn(formatMessage(message, context));
         emitToUI('warn', message);
       }),
     error: (message, context, err) => 
       Effect.sync(() => {
         const detail = err ? String(err) : undefined;
-        error(formatMessage(`${message}${detail ? ` | ERROR: ${detail}` : ''}`, context));
+        tauriLog.error(formatMessage(`${message}${detail ? ` | ERROR: ${detail}` : ''}`, context));
         emitToUI('error', message, detail);
       }),
     debug: (message, context) => 
-      Effect.sync(() => debug(formatMessage(message, context))),
+      Effect.sync(() => tauriLog.debug(formatMessage(message, context))),
     notify: (level, message, detail) =>
       Effect.sync(() => emitToUI(level, message, detail)),
   }
 );
 
-// Helper for functional pipelines
+// --- WEB IMPLEMENTATION ---
+export const LoggerServiceWeb = Layer.succeed(
+  LoggerService,
+  {
+    info: (message, context) => 
+      Effect.sync(() => {
+        console.info(formatMessage(message, context));
+        emitToUI('info', message);
+      }),
+    warn: (message, context) => 
+      Effect.sync(() => {
+        console.warn(formatMessage(message, context));
+        emitToUI('warn', message);
+      }),
+    error: (message, context, err) => 
+      Effect.sync(() => {
+        const detail = err ? String(err) : undefined;
+        console.error(formatMessage(`${message}${detail ? ` | ERROR: ${detail}` : ''}`, context));
+        emitToUI('error', message, detail);
+      }),
+    debug: (message, context) => 
+      Effect.sync(() => console.debug(formatMessage(message, context))),
+    notify: (level, message, detail) =>
+      Effect.sync(() => emitToUI(level, message, detail)),
+  }
+);
+
+/**
+ * Dynamic Logger Layer based on environment
+ */
+export const LoggerServiceLive = isTauri() ? LoggerServiceTauri : LoggerServiceWeb;
+
+// Helpers for functional pipelines
 export const logInfo = (message: string, context?: Record<string, unknown>) =>
   Effect.flatMap(LoggerService, (logger) => logger.info(message, context));
 

@@ -1,10 +1,14 @@
 import { Effect, Context, Stream, Layer } from 'effect';
-import { VideoMetadataSchema, BatchUploadSchema } from '../tenant/config';
+import { VideoMetadataSchema, BatchUploadSchema } from '../channel/config';
 import { logInfo, logError, LoggerService } from '../logger';
 import { enrichMetadata } from './enrichment';
 import { invoke } from '@tauri-apps/api/core';
 import type { VideoMetadataPayload, BatchJobResponse } from '../../bindings/youtube_types';
 import { Option } from 'effect';
+import { isTauri } from '../env';
+
+// 12-Factor: Edge backend URL for web environment
+const EDGE_BACKEND_URL = import.meta.env.PUBLIC_EDGE_BACKEND_URL || 'https://api.yt-manager.com';
 
 export class YouTubeError {
   readonly _tag = 'YouTubeError';
@@ -44,48 +48,87 @@ const toPayload = (metadata: typeof VideoMetadataSchema.Type): VideoMetadataPayl
   language: Option.getOrNull(metadata.language),
 });
 
-export const YouTubeServiceLive = Layer.succeed(
+// --- TAURI IMPLEMENTATION ---
+export const YouTubeServiceTauri = Layer.succeed(
   YouTubeService,
   {
     uploadVideo: (metadata, _file) =>
       Effect.gen(function* (_) {
-        yield* _(logInfo('Invoking backend upload job', { title: metadata.title }));
-        
+        yield* _(logInfo('Tauri: Invoking backend upload job', { title: metadata.title }));
         const payload = toPayload(metadata);
-
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
-            catch: (error) => new YouTubeError("Backend job failed", error),
+            catch: (error) => new YouTubeError("Tauri backend job failed", error),
           })
         );
-
         return response.video_id;
-      }).pipe(
-        Effect.tap((id) => logInfo('Backend job completed', { id, title: metadata.title })),
-        Effect.tapError((err) => logError('Backend job failed', { title: metadata.title }, err))
-      ),
+      }),
       
     scheduleLiveStream: (metadata) =>
       Effect.gen(function* (_) {
-        yield* _(logInfo('Invoking backend scheduling job', { title: metadata.title }));
-        
+        yield* _(logInfo('Tauri: Invoking backend scheduling job', { title: metadata.title }));
         const payload = toPayload(metadata);
-
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
-            catch: (error) => new YouTubeError("Backend scheduling failed", error),
+            catch: (error) => new YouTubeError("Tauri backend scheduling failed", error),
+          })
+        );
+        return response.video_id;
+      }),
+  }
+);
+
+// --- WEB IMPLEMENTATION (Edge Backend) ---
+export const YouTubeServiceWeb = Layer.succeed(
+  YouTubeService,
+  {
+    uploadVideo: (metadata, file) =>
+      Effect.gen(function* (_) {
+        yield* _(logInfo('Web: Sending upload to Edge backend', { title: metadata.title }));
+        
+        const formData = new FormData();
+        formData.append('metadata', JSON.stringify(toPayload(metadata)));
+        formData.append('video', file);
+
+        const response = yield* _(
+          Effect.tryPromise({
+            try: () => fetch(`${EDGE_BACKEND_URL}/upload`, {
+              method: 'POST',
+              body: formData,
+            }).then(r => r.json() as Promise<BatchJobResponse>),
+            catch: (error) => new YouTubeError("Web Edge backend upload failed", error),
           })
         );
 
         return response.video_id;
-      }).pipe(
-        Effect.tap((id) => logInfo('Backend scheduling completed', { id, title: metadata.title })),
-        Effect.tapError((err) => logError('Backend scheduling failed', { title: metadata.title }, err))
-      ),
+      }),
+      
+    scheduleLiveStream: (metadata) =>
+      Effect.gen(function* (_) {
+        yield* _(logInfo('Web: Sending scheduling to Edge backend', { title: metadata.title }));
+        
+        const response = yield* _(
+          Effect.tryPromise({
+            try: () => fetch(`${EDGE_BACKEND_URL}/schedule`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(toPayload(metadata)),
+            }).then(r => r.json() as Promise<BatchJobResponse>),
+            catch: (error) => new YouTubeError("Web Edge backend scheduling failed", error),
+          })
+        );
+
+        return response.video_id;
+      }),
   }
 );
+
+/**
+ * Dynamic YouTube Service Layer based on environment
+ */
+export const YouTubeServiceLive = isTauri() ? YouTubeServiceTauri : YouTubeServiceWeb;
 
 // High-level batch processing using Effect Streams
 export const processBatch = (
@@ -104,7 +147,5 @@ export const processBatch = (
             : yield* _(service.scheduleLiveStream(enriched));
         })
       ),
-      // Control concurrency for 12-factor resource management
-      // Using concurrency: 2 to avoid hitting rate limits or crashing Tauri
       Stream.runCollect
     );
