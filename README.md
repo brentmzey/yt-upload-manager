@@ -14,34 +14,39 @@ A 12-factor, multi-channel YouTube management application built with **Tauri 2.0
 - **Bun**: For fast JavaScript dependency management.
 - **Rust**: For the Tauri backend.
 
-## 💻 Local Setup & Development
+## 🛠 Orchestration & Development
 
-### 1. Enter the Environment
-```bash
-nix develop
-```
+This project uses `just` for task orchestration. If you have `just` installed, you can use these commands:
 
-### 2. Install Dependencies
-```bash
-bun install
-```
+### Development
+- `just dev`: Start the Astro development server (Web mode).
+- `just tauri-dev`: Start the Tauri application in development mode (Desktop mode).
+- `just gen-bindings`: Regenerate TypeScript bindings from Rust source code.
 
-### 3. Setup PocketBase
-Ensure you have a PocketBase instance running.
-Run the migration to set up the optimized schema:
-```bash
-bun run migrate
-```
+### Database (PocketBase)
+- `just db-up`: Start PocketBase in the background and run all migrations.
+- `just migrate`: Run database migrations on an already running PocketBase instance.
+- `just db-test-up`: Start a clean, isolated PocketBase instance for testing.
 
-### 4. Run Development Mode
-```bash
-bun tauri dev
-```
+### Quality & Testing
+- `just lint`: Run TypeScript type checking.
+- `just test`: Run the full Vitest test suite.
+- `just test-cov`: Run tests and generate a coverage report.
+- `just check-env`: Verify the health of your local development environment.
+- `just fix-esbuild`: Clear Astro/Vite caches to resolve common environment issues.
 
-## 🏗 Building for Production
-```bash
-bun tauri build
-```
+### Build
+- `just build`: Build the web frontend.
+- `just tauri-build`: Build the production-ready Tauri native application.
+- `just clean`: Remove all build artifacts and temporary database data.
+
+## 🚀 Recent Improvements
+- **Centralized Navigation**: New `App` component for seamless switching between Dashboard, Channels, and Settings.
+- **Channel Management**: Dedicated view for managing authorized YouTube accounts.
+- **System Monitoring**: Real-time CPU and Job status integrated into the header (via Rust backend).
+- **Automation**: Integrated `just` for better developer experience and environment troubleshooting.
+
+## 💻 Local Setup
 
 ## 📜 Documentation
 - [AGENTS.md](./AGENTS.md) - Engineering standards and security mandates.

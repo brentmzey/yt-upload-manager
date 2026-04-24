@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Effect, Layer } from 'effect';
-import { YouTubeServiceLive, processBatch } from '../lib/youtube/service';
-import { LoggerServiceLive } from '../lib/logger';
+import { YouTubeService, YouTubeServiceLive, processBatch } from '../lib/youtube/service';
+import { LoggerServiceLive, logInfo } from '../lib/logger';
 import { VideoMetadataSchema } from '../lib/channel/config';
 import { Option } from 'effect';
 import { RefreshCw, CheckCircle2, XCircle, Loader2, AlertTriangle, Play, RotateCcw, Upload, FileVideo, Plus, Trash2 } from 'lucide-react';
@@ -10,7 +10,7 @@ type BatchTask = {
   id: string;
   metadata: typeof VideoMetadataSchema.Type;
   file: File;
-  status: 'idle' | 'processing' | 'success' | 'error';
+  status: 'idle' | 'processing' | 'success' | 'error' | 'queued';
   error?: string;
 };
 
@@ -20,6 +20,31 @@ export const BatchManager: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const AppLayer = Layer.mergeAll(YouTubeServiceLive, LoggerServiceLive);
+    
+    const setupListener = Effect.gen(function* (_) {
+      const service = yield* _(YouTubeService);
+      const unlisten = yield* _(service.onJobCompleted((response) => {
+        console.log('Job completed event received:', response);
+        // We'd ideally match response.video_id or some correlation ID
+        // For this prototype, we just log it
+        Effect.runSync(
+          logInfo('Job completed from backend', { videoId: response.video_id }).pipe(
+            Effect.provide(LoggerServiceLive)
+          )
+        );
+      }));
+      return unlisten;
+    });
+
+    const cleanupPromise = Effect.runPromise(Effect.provide(setupListener, AppLayer));
+    
+    return () => {
+      cleanupPromise.then(unlisten => unlisten());
+    };
+  }, []);
 
   const createDefaultMetadata = (fileName: string): typeof VideoMetadataSchema.Type => ({
     title: fileName.split('.')[0] || 'Untitled Video',

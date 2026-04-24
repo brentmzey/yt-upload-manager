@@ -3,6 +3,7 @@ import { VideoMetadataSchema, BatchUploadSchema } from '../channel/config';
 import { logInfo, logError, LoggerService } from '../logger';
 import { enrichMetadata } from './enrichment';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { VideoMetadataPayload, BatchJobResponse } from '../../bindings/youtube_types';
 import { Option } from 'effect';
 import { isTauri } from '../env';
@@ -24,6 +25,10 @@ export interface YouTubeService {
   readonly scheduleLiveStream: (
     metadata: typeof VideoMetadataSchema.Type
   ) => Effect.Effect<string, YouTubeError, LoggerService>;
+
+  readonly onJobCompleted: (
+    handler: (response: BatchJobResponse) => void
+  ) => Effect.Effect<() => void, YouTubeError>;
 }
 
 export const YouTubeService = Context.GenericTag<YouTubeService>('YouTubeService');
@@ -54,7 +59,7 @@ export const YouTubeServiceTauri = Layer.succeed(
   {
     uploadVideo: (metadata, _file) =>
       Effect.gen(function* (_) {
-        yield* _(logInfo('Tauri: Invoking backend upload job', { title: metadata.title }));
+        yield* _(logInfo('Tauri: Queueing backend upload job', { title: metadata.title }));
         const payload = toPayload(metadata);
         const response = yield* _(
           Effect.tryPromise({
@@ -67,7 +72,7 @@ export const YouTubeServiceTauri = Layer.succeed(
       
     scheduleLiveStream: (metadata) =>
       Effect.gen(function* (_) {
-        yield* _(logInfo('Tauri: Invoking backend scheduling job', { title: metadata.title }));
+        yield* _(logInfo('Tauri: Queueing backend scheduling job', { title: metadata.title }));
         const payload = toPayload(metadata);
         const response = yield* _(
           Effect.tryPromise({
@@ -76,6 +81,17 @@ export const YouTubeServiceTauri = Layer.succeed(
           })
         );
         return response.video_id;
+      }),
+
+    onJobCompleted: (handler) =>
+      Effect.tryPromise({
+        try: async () => {
+          const unlisten = await listen<BatchJobResponse>('job-completed', (event) => {
+            handler(event.payload);
+          });
+          return unlisten;
+        },
+        catch: (error) => new YouTubeError("Failed to subscribe to tauri events", error),
       }),
   }
 );
@@ -122,6 +138,9 @@ export const YouTubeServiceWeb = Layer.succeed(
 
         return response.video_id;
       }),
+
+    onJobCompleted: (_handler) =>
+      Effect.sync(() => () => {}),
   }
 );
 

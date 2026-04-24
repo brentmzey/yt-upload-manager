@@ -13,6 +13,8 @@ export class PocketBaseError {
 
 export interface PocketBaseService {
   readonly getChannels: () => Effect.Effect<any[], PocketBaseError>;
+  readonly isAuthenticated: () => boolean;
+  readonly authenticateAsAdmin: (email: string, password: string) => Effect.Effect<void, PocketBaseError>;
 }
 
 export const PocketBaseService = Context.GenericTag<PocketBaseService>('PocketBaseService');
@@ -23,6 +25,12 @@ export const PocketBaseServiceLive = Effect.provideService(
     getChannels: () =>
       Effect.tryPromise({
         try: () => pb.collection('channels').getFullList(),
+        catch: (error) => new PocketBaseError(error),
+      }),
+    isAuthenticated: () => pb.authStore.isValid,
+    authenticateAsAdmin: (email, password) =>
+      Effect.tryPromise({
+        try: () => pb.admins.authWithPassword(email, password).then(() => {}),
         catch: (error) => new PocketBaseError(error),
       }),
   }
