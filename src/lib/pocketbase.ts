@@ -1,0 +1,29 @@
+import PocketBase from 'pocketbase';
+import { Effect, Context } from 'effect';
+
+// 12-Factor: PocketBase URL from environment variable
+const POCKETBASE_URL = import.meta.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
+
+export const pb = new PocketBase(POCKETBASE_URL);
+
+export class PocketBaseError {
+  readonly _tag = 'PocketBaseError';
+  constructor(readonly cause: unknown) {}
+}
+
+export interface PocketBaseService {
+  readonly getTenants: () => Effect.Effect<any[], PocketBaseError>;
+}
+
+export const PocketBaseService = Context.GenericTag<PocketBaseService>('PocketBaseService');
+
+export const PocketBaseServiceLive = Effect.provideService(
+  PocketBaseService,
+  {
+    getTenants: () =>
+      Effect.tryPromise({
+        try: () => pb.collection('tenants').getFullList(),
+        catch: (error) => new PocketBaseError(error),
+      }),
+  }
+);

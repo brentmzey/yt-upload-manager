@@ -1,43 +1,52 @@
-# Astro Starter Kit: Minimal
+# YT Upload Manager
 
-```sh
-npm create astro@latest -- --template minimal
+A 12-factor, multi-tenant YouTube management application built with **Tauri 2.0**, **Astro.js**, **React**, and **Effect-TS**.
+
+## 🚀 Key Features
+- **Multi-Tenant Design**: Securely manage multiple YouTube accounts with isolated configurations.
+- **Batch Operations**: Bulk upload videos and schedule upcoming live streams with high concurrency.
+- **Dynamic Metadata Enrichment**: Template-based metadata (titles, descriptions) that injects tenant-specific variables.
+- **Functional Programming**: Built with [Effect](https://effect.website/) for robust error handling and type-safe async pipelines.
+- **12-Factor Ready**: Externalized configuration via PocketBase and environment variables.
+- **Cross-Platform**: Native desktop experience on Windows, macOS, and Linux via Tauri.
+
+## 🛠 Prerequisites
+- **Nix**: (Recommended) To ensure a consistent build environment.
+- **Bun**: For fast JavaScript dependency management.
+- **Rust**: For the Tauri backend.
+
+## 💻 Local Setup & Development
+
+### 1. Enter the Environment
+This project uses Nix to pin specific versions of Node, Rust, and system libraries.
+```bash
+nix develop
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
-
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+### 2. Install Dependencies
+```bash
+bun install
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+### 3. Setup PocketBase
+Ensure you have a PocketBase instance running. By default, the app looks for `http://127.0.0.1:8090`.
+Set your environment variables in a `.env` file:
+```env
+PUBLIC_POCKETBASE_URL=https://your-pockethost-instance.io
+```
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+### 4. Run Development Mode
+```bash
+bun tauri dev
+```
 
-Any static assets, like images, can be placed in the `public/` directory.
+## 🏗 Building for Production
+```bash
+bun tauri build
+```
 
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+## 📜 Documentation
+- [AGENTS.md](./AGENTS.md) - Engineering standards and security mandates.
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - Guidelines for contributing.
+- [CHANGELOG.md](./CHANGELOG.md) - Project history and updates.
+- [dibr.md](./dibr.md) - Developer Initial Build & Run reference.
