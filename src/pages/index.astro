@@ -2,6 +2,7 @@
 import { BatchManager } from '../components/BatchManager';
 import { DashboardLayout } from '../components/DashboardLayout';
 import { LogConsole } from '../components/LogConsole';
+import { Plus } from 'lucide-react';
 import '../styles/global.css';
 ---
 
@@ -12,13 +13,13 @@ import '../styles/global.css';
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
-		<title>YouTube Tenant Manager</title>
+		<title>YouTube Upload Manager</title>
 	</head>
-	<body>
+	<body class="bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
 		<DashboardLayout client:load>
 			<header>
-				<h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Overview</h1>
-				<p class="text-slate-500 mt-1">Manage your multi-tenant YouTube operations.</p>
+				<h1 class="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Overview</h1>
+				<p class="text-slate-500 dark:text-slate-400 mt-1">Manage your multi-channel YouTube operations.</p>
 			</header>
 			
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -27,25 +28,33 @@ import '../styles/global.css';
 				</div>
 				
 				<div class="space-y-8">
-					<section class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-						<h3 class="font-bold text-lg mb-4">Active Tenants</h3>
+					<section class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+						<div class="flex items-center justify-between mb-4">
+							<h3 class="font-bold text-lg text-slate-900 dark:text-white">Active Channels</h3>
+							<button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-blue-600 dark:text-blue-400 transition-colors">
+								<Plus size={20} />
+							</button>
+						</div>
 						<div class="space-y-3">
 							{[1, 2, 3].map((i) => (
-								<div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+								<div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900 transition-all rounded-xl border border-slate-100 dark:border-slate-800 cursor-pointer group">
 									<div class="flex items-center space-x-3">
-										<div class="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600 font-bold text-xs">T{i}</div>
+										<div class="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-sm">C{i}</div>
 										<div>
-											<p class="text-sm font-bold">Tenant #{i}</p>
-											<p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">YouTube Official</p>
+											<p class="text-sm font-bold text-slate-900 dark:text-white">Channel #{i}</p>
+											<p class="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">YouTube Official</p>
 										</div>
 									</div>
-									<div class="w-2 h-2 bg-green-500 rounded-full"></div>
+									<div class="flex items-center gap-2">
+										<div class="w-2 h-2 bg-green-500 rounded-full"></div>
+										<div class="text-[10px] font-bold text-slate-400 dark:text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">SELECT</div>
+									</div>
 								</div>
 							))}
 						</div>
 					</section>
 
-					<section class="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 rounded-2xl shadow-xl shadow-blue-100 text-white relative overflow-hidden">
+					<section class="bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-900 p-6 rounded-2xl shadow-xl shadow-blue-100 dark:shadow-none text-white relative overflow-hidden">
 						<div class="relative z-10">
 							<h3 class="font-bold text-lg mb-2">Pro Enrichment</h3>
 							<p class="text-blue-100 text-sm mb-4">Upgrade to unlock AI-powered metadata optimization and batch thumbnail generation.</p>

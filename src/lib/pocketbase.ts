@@ -12,7 +12,7 @@ export class PocketBaseError {
 }
 
 export interface PocketBaseService {
-  readonly getTenants: () => Effect.Effect<any[], PocketBaseError>;
+  readonly getChannels: () => Effect.Effect<any[], PocketBaseError>;
 }
 
 export const PocketBaseService = Context.GenericTag<PocketBaseService>('PocketBaseService');
@@ -20,9 +20,9 @@ export const PocketBaseService = Context.GenericTag<PocketBaseService>('PocketBa
 export const PocketBaseServiceLive = Effect.provideService(
   PocketBaseService,
   {
-    getTenants: () =>
+    getChannels: () =>
       Effect.tryPromise({
-        try: () => pb.collection('tenants').getFullList(),
+        try: () => pb.collection('channels').getFullList(),
         catch: (error) => new PocketBaseError(error),
       }),
   }

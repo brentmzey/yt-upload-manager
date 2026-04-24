@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { VideoMetadataSchema } from '../tenant/config';
+import { VideoMetadataSchema } from '../channel/config';
 
 export const enrichMetadata = (
   metadata: typeof VideoMetadataSchema.Type

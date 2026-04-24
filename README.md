@@ -1,14 +1,13 @@
-# YT Upload Manager
+# YouTube Upload Manager
 
-A 12-factor, multi-tenant YouTube management application built with **Tauri 2.0**, **Astro.js**, **React**, and **Effect-TS**.
+A 12-factor, multi-channel YouTube management application built with **Tauri 2.0**, **Astro.js**, **React**, and **Effect-TS**.
 
 ## 🚀 Key Features
-- **Multi-Tenant Design**: Securely manage multiple YouTube accounts with isolated configurations.
+- **Multi-Channel Design**: Securely manage multiple YouTube accounts with isolated configurations.
 - **Batch Operations**: Bulk upload videos and schedule upcoming live streams with high concurrency.
-- **Dynamic Metadata Enrichment**: Template-based metadata (titles, descriptions) that injects tenant-specific variables.
+- **Brotli Optimized Storage**: Transparently compresses large metadata fields using Brotli for high-performance PocketBase persistence.
+- **Cross-Platform**: Run as a native Desktop app (macOS, Windows, Linux), Mobile app (Android, iOS), or in the Browser.
 - **Functional Programming**: Built with [Effect](https://effect.website/) for robust error handling and type-safe async pipelines.
-- **12-Factor Ready**: Externalized configuration via PocketBase and environment variables.
-- **Cross-Platform**: Native desktop experience on Windows, macOS, and Linux via Tauri.
 
 ## 🛠 Prerequisites
 - **Nix**: (Recommended) To ensure a consistent build environment.
@@ -18,7 +17,6 @@ A 12-factor, multi-tenant YouTube management application built with **Tauri 2.0*
 ## 💻 Local Setup & Development
 
 ### 1. Enter the Environment
-This project uses Nix to pin specific versions of Node, Rust, and system libraries.
 ```bash
 nix develop
 ```
@@ -29,10 +27,10 @@ bun install
 ```
 
 ### 3. Setup PocketBase
-Ensure you have a PocketBase instance running. By default, the app looks for `http://127.0.0.1:8090`.
-Set your environment variables in a `.env` file:
-```env
-PUBLIC_POCKETBASE_URL=https://your-pockethost-instance.io
+Ensure you have a PocketBase instance running.
+Run the migration to set up the optimized schema:
+```bash
+bun run migrate
 ```
 
 ### 4. Run Development Mode

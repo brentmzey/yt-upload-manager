@@ -1,12 +1,11 @@
-# Developer Initial Build & Run (DIBR) - YT Upload Manager
+# Developer Initial Build & Run (DIBR) - YouTube Upload Manager
 
-This document provides a low-level reference for the initial setup and build process of the YT Tenant Manager.
+This document provides a low-level reference for the initial setup and build process of the YouTube Upload Manager.
 
 ## 🧱 Environment Bootstrap
 
 ### 1. Nix Pinned Environment
-The project is pinned to a specific Nixpkgs hash to avoid breaking changes in the `nixos-unstable` channel (specifically regarding macOS SDK removals).
-- **Hash**: `57da00f35314751433939634e94119da49e0b4d4`
+The project uses Nix to provide a deterministic environment.
 - **Command**: `nix develop`
 
 ### 2. Dependency Resolution
@@ -15,41 +14,44 @@ We use `bun` for the frontend and `cargo` for the backend.
 bun install
 ```
 
-## 🛠 Build Pipeline
+## 🛠 Build & Schema Alignment
+
+### PocketBase Migration
+Align your local PocketBase instance with the optimized schema:
+```bash
+bun run migrate
+```
+This idempotent script sets up `channels`, `batches`, and `staged_videos` with optimized indices and Brotli compression hints.
 
 ### Frontend (Astro + React)
-The frontend is compiled into a static site in the `dist/` directory.
 ```bash
 bun run build
 ```
 
-### Backend (Tauri + Rust)
-The backend is a Rust binary that embeds the frontend assets.
-```bash
-cd src-tauri && cargo check
-```
-
 ### Type Linkage (Bindings)
-Generated via a specialized test in the Rust library.
+Generated automatically during `tauri dev` or manually:
 ```bash
 cd src-tauri && cargo test export_bindings
 ```
 
 ## 🚀 Execution Reference
 
-### Development Mode (Hot Reloading)
-Launches the Tauri window and the Astro dev server concurrently.
+### Development Mode (Desktop)
 ```bash
 bun tauri dev
 ```
 
-### Production Build
-Produces the final native installers (e.g., `.dmg`, `.msi`, `.deb`).
+### Web Mode
 ```bash
-bun tauri build
+bun dev
+```
+
+### Mobile Mode
+```bash
+bun tauri android dev
+bun tauri ios dev
 ```
 
 ## 📋 Common Troubleshooting
-- **SDK Errors**: If you encounter macOS SDK header errors, ensure you are inside the `nix develop` shell.
-- **Lockfile Conflicts**: If `bun install` fails, try deleting `node_modules` and `bun.lockb` and running again.
-- **Port 4321**: The Astro dev server defaults to `4321`. Ensure no other service is occupying this port.
+- **SDK Errors**: Ensure you are inside the `nix develop` shell.
+- **Stale Target**: If you see path errors (e.g., `yt-tenant-manager`), run `rm -rf src-tauri/target`.
