@@ -2,6 +2,10 @@
 
 export type BatchJobResponse = { video_id: string, status: string, };
 
+export type BatchJobResponse = { video_id: string, status: string, };
+
+export type SystemStatus = { cpu_usage: number, memory_usage: bigint, active_jobs: number, uptime: bigint, };
+
 export type SystemStatus = { cpu_usage: number, memory_usage: bigint, active_jobs: number, uptime: bigint, };
 
 export type VideoMetadataPayload = { title: string, description: string, privacy_status: string, license: string, embeddable: boolean, public_stats_viewable: boolean, made_for_kids: boolean, contains_synthetic_media: boolean, paid_product_placement: boolean, tags: Array<string>, category_id: string, sub_details: { [key in string]?: string }, thumbnail_url: string | null, scheduled_start_time: string | null, publish_at: string | null, recording_date: string | null, language: string | null, };

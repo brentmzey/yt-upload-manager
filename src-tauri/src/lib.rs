@@ -4,6 +4,29 @@ use tauri::{State, Manager, Emitter};
 use std::sync::{Arc, Mutex};
 use sysinfo::System;
 use tokio::sync::mpsc;
+use thiserror::Error;
+use log::{info, debug, trace, error};
+
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Failed to lock state: {0}")]
+    LockError(String),
+    #[error("Job queue error: {0}")]
+    QueueError(String),
+    #[error("Internal error: {0}")]
+    Internal(String),
+}
+
+impl Serialize for AppError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+type AppResult<T> = Result<T, AppError>;
 
 #[derive(Serialize, Deserialize, TS, Debug, Clone)]
 #[ts(export, export_to = "../../src/bindings/youtube_types.ts")]
@@ -54,37 +77,49 @@ pub struct AppState {
 // --- Background Worker ---
 
 async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, active_jobs: Arc<Mutex<u32>>, app_handle: tauri::AppHandle) {
+    debug!("Background worker started");
     while let Some(payload) = rx.recv().await {
         {
-            let mut count = active_jobs.lock().unwrap();
-            *count += 1;
+            match active_jobs.lock() {
+                Ok(mut count) => *count += 1,
+                Err(e) => error!("Failed to lock active_jobs: {}", e),
+            }
         }
 
-        println!("Rust Worker: Starting job for {}", payload.title);
+        info!("Rust Worker: Starting job for {}", payload.title);
+        trace!("Job details: {:?}", payload);
         
         // Simulate long-running upload task
         let job_active_jobs = Arc::clone(&active_jobs);
         let job_payload = payload.clone();
         let job_handle = app_handle.clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
+            debug!("Task spawned for {}", job_payload.title);
             // In a real app, this is where reqwest calls YouTube API
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             
-            println!("Rust Worker: Completed job for {}", job_payload.title);
+            info!("Rust Worker: Completed job for {}", job_payload.title);
             
-            let mut count = job_active_jobs.lock().unwrap();
-            if *count > 0 {
-                *count -= 1;
+            match job_active_jobs.lock() {
+                Ok(mut count) => {
+                    if *count > 0 {
+                        *count -= 1;
+                    }
+                }
+                Err(e) => error!("Failed to lock active_jobs in task: {}", e),
             }
 
             // We could emit an event back to the UI here
-            let _ = job_handle.emit("job-completed", BatchJobResponse {
+            if let Err(e) = job_handle.emit("job-completed", BatchJobResponse {
                 video_id: "yt-simulated-id".to_string(),
                 status: "Success".to_string(),
-            });
+            }) {
+                error!("Failed to emit job-completed event: {}", e);
+            }
         });
     }
+    info!("Background worker shutting down");
 }
 
 // --- Commands ---
@@ -93,8 +128,9 @@ mod commands {
     use super::*;
 
     #[tauri::command]
-    pub async fn get_system_status(state: State<'_, AppState>) -> Result<SystemStatus, String> {
-        let mut sys = state.system.lock().unwrap();
+    pub async fn get_system_status(state: State<'_, AppState>) -> AppResult<SystemStatus> {
+        trace!("Handling get_system_status command");
+        let mut sys = state.system.lock().map_err(|e| AppError::LockError(e.to_string()))?;
         
         // Refresh specific metrics
         sys.refresh_cpu_all();
@@ -103,7 +139,9 @@ mod commands {
         let cpu_usage = sys.global_cpu_usage();
         let memory_usage = sys.used_memory();
         let uptime = System::uptime();
-        let active_jobs = *state.active_jobs.lock().unwrap();
+        let active_jobs = *state.active_jobs.lock().map_err(|e| AppError::LockError(e.to_string()))?;
+
+        debug!("System status: CPU {}%, MEM {}KB, Jobs {}, Uptime {}s", cpu_usage, memory_usage, active_jobs, uptime);
 
         Ok(SystemStatus {
             cpu_usage,
@@ -117,12 +155,11 @@ mod commands {
     pub async fn start_youtube_upload_job(
         payload: VideoMetadataPayload,
         state: State<'_, AppState>
-    ) -> Result<BatchJobResponse, String> {
-        println!("Backend: Queueing upload for {}", payload.title);
+    ) -> AppResult<BatchJobResponse> {
+        info!("Backend: Queueing upload for {}", payload.title);
+        debug!("Payload: {:?}", payload);
         
-        if let Err(e) = state.job_tx.send(payload).await {
-            return Err(format!("Failed to queue job: {}", e));
-        }
+        state.job_tx.send(payload).await.map_err(|e| AppError::QueueError(e.to_string()))?;
 
         Ok(BatchJobResponse {
             video_id: "queued".to_string(),
@@ -141,12 +178,14 @@ pub fn run() {
     system.refresh_all();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(tauri_plugin_log::Builder::default()
+            .level(log::LevelFilter::Trace)
+            .build())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             
-            // Start background worker
-            tokio::spawn(async move {
+            // Start background worker using Tauri's async runtime
+            tauri::async_runtime::spawn(async move {
                 start_background_worker(rx, active_jobs_clone, app_handle).await;
             });
 
@@ -170,11 +209,76 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+
+    fn setup_app() -> (tauri::App<tauri::test::MockRuntime>, mpsc::Receiver<VideoMetadataPayload>) {
+        let (tx, rx) = mpsc::channel(100);
+        let active_jobs = Arc::new(Mutex::new(0));
+        let mut system = System::new_all();
+        system.refresh_all();
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("failed to build app");
+            
+        app.manage(AppState {
+            system: Mutex::new(system),
+            active_jobs,
+            job_tx: tx,
+        });
+        
+        (app, rx)
+    }
 
     #[test]
     fn export_bindings() {
         VideoMetadataPayload::export().expect("Failed to export VideoMetadataPayload");
         BatchJobResponse::export().expect("Failed to export BatchJobResponse");
         SystemStatus::export().expect("Failed to export SystemStatus");
+    }
+
+    #[tokio::test]
+    async fn test_get_system_status() {
+        let (app, _rx) = setup_app();
+        let state: State<AppState> = app.state();
+        
+        let result = commands::get_system_status(state).await;
+        assert!(result.is_ok());
+        let status = result.unwrap();
+        assert!(status.memory_usage > 0);
+    }
+
+    #[tokio::test]
+    async fn test_start_upload_job() {
+        let (app, _rx) = setup_app();
+        let state: State<AppState> = app.state();
+        
+        let payload = VideoMetadataPayload {
+            title: "Test Video".to_string(),
+            description: "Test Description".to_string(),
+            privacy_status: "private".to_string(),
+            license: "youtube".to_string(),
+            embeddable: true,
+            public_stats_viewable: true,
+            made_for_kids: false,
+            contains_synthetic_media: false,
+            paid_product_placement: false,
+            tags: vec!["test".to_string()],
+            category_id: "22".to_string(),
+            sub_details: std::collections::HashMap::new(),
+            thumbnail_url: None,
+            scheduled_start_time: None,
+            publish_at: None,
+            recording_date: None,
+            language: None,
+        };
+
+        let result = commands::start_youtube_upload_job(payload, state).await;
+        if let Err(ref e) = result {
+            panic!("Command failed with: {:?}", e);
+        }
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.status, "Processing");
     }
 }
