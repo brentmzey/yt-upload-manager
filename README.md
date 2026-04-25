@@ -48,6 +48,45 @@ This project uses `just` for task orchestration. If you have `just` installed, y
 
 ## 💻 Local Setup
 
+1. **Clone the repository**
+2. **Install dependencies**: `bun install`
+3. **Configure Environment**: Copy `.env.example` to `.env` and fill in your values.
+4. **Start Database**: `just db-up` (Starts PocketBase and runs migrations)
+5. **Start App**: `just tauri-dev` (Desktop) or `just dev` (Web)
+
+## 🌐 Deployment & 12-Factor Configuration
+
+This application follows [12-Factor App](https://12factor.net/) principles, particularly regarding configuration and backing services.
+
+### Environment Variables
+Configuration is strictly managed via environment variables.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PUBLIC_POCKETBASE_URL` | URL of the PocketBase instance | `http://127.0.0.1:8090` |
+| `PUBLIC_EDGE_BACKEND_URL` | API URL for Web/Edge mode | `https://api.yt-manager.com` |
+| `PB_ADMIN_EMAIL` | Admin email for migrations | `admin@yt-manager.com` |
+| `PB_ADMIN_PASSWORD` | Admin password for migrations | `admin123456` |
+
+### Multi-Tenancy Strategies
+
+#### 1. Isolated Tenants (Dedicated DB) - *Recommended for Enterprise*
+Each tenant (e.g., a specific agency or creator) receives a dedicated deployment:
+- **Dedicated PocketBase Binary**: Run a separate `pocketbase serve` process per tenant.
+- **Dedicated App Instance**: Deploy a separate frontend pointing to the tenant's specific `PUBLIC_POCKETBASE_URL`.
+- **Full Isolation**: No data overlap; tenant-specific encryption keys and storage buckets.
+
+#### 2. Shared Multi-Tenancy (Single DB) - *SaaS Model*
+Multiple tenants share a single PocketBase instance:
+- **Tenant ID Mapping**: Add a `tenant_id` field to `channels`, `batches`, and `staged_videos` collections.
+- **Row-Level Security (RLS)**: Configure PocketBase API Rules to restrict access:
+  - `listRule`: `@request.auth.id != "" && tenant_id = @request.auth.tenant_id`
+- **Dynamic Configuration**: The app detects the tenant context based on the authenticated user's profile.
+
+### Backing Services
+- **Storage**: Uses S3-compatible storage (via PocketBase) for video staging and thumbnails.
+- **Database**: PocketBase (SQLite + WAL) for high-performance metadata management.
+
 ## 📜 Documentation
 - [AGENTS.md](./AGENTS.md) - Engineering standards and security mandates.
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - Guidelines for contributing.
