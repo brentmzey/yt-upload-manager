@@ -15,21 +15,22 @@ const pb = new PocketBase(PB_URL);
  */
 async function ensureAdmin() {
   try {
-    await pb.admins.authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
-    console.log('✅ Authenticated as Admin.');
+    // PocketBase 0.23+ uses the '_superusers' collection for admins
+    await pb.collection('_superusers').authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
+    console.log('✅ Authenticated as Superuser.');
   } catch (error) {
-    console.log('Attempting to create first admin...');
+    console.log('Attempting to create first superuser...');
     try {
-      // This only works if no admins exist
-      await pb.admins.create({
+      // This only works if no superusers exist
+      await pb.collection('_superusers').create({
         email: PB_ADMIN_EMAIL,
         password: PB_ADMIN_PASSWORD,
         passwordConfirm: PB_ADMIN_PASSWORD,
       });
-      console.log('✨ Admin account created.');
-      await pb.admins.authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
+      console.log('✨ Superuser account created.');
+      await pb.collection('_superusers').authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
     } catch (e) {
-      console.error('❌ Could not authenticate or create admin. Is PocketBase running?');
+      console.error('❌ Could not authenticate or create superuser. Is PocketBase running?');
       throw e;
     }
   }

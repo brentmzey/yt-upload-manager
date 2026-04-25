@@ -30,7 +30,7 @@ export const PocketBaseServiceLive = Effect.provideService(
     isAuthenticated: () => pb.authStore.isValid,
     authenticateAsAdmin: (email, password) =>
       Effect.tryPromise({
-        try: () => pb.admins.authWithPassword(email, password).then(() => {}),
+        try: () => pb.collection('_superusers').authWithPassword(email, password).then(() => {}),
         catch: (error) => new PocketBaseError(error),
       }),
   }

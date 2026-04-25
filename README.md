@@ -66,7 +66,17 @@ Configuration is strictly managed via environment variables.
 | `PUBLIC_POCKETBASE_URL` | URL of the PocketBase instance | `http://127.0.0.1:8090` |
 | `PUBLIC_EDGE_BACKEND_URL` | API URL for Web/Edge mode | `https://api.yt-manager.com` |
 | `PB_ADMIN_EMAIL` | Admin email for migrations | `admin@yt-manager.com` |
-| `PB_ADMIN_PASSWORD` | Admin password for migrations | `admin123456` |
+| `YOUTUBE_CLIENT_ID` | OAuth 2.0 Client ID | (None) |
+| `YOUTUBE_CLIENT_SECRET` | OAuth 2.0 Client Secret | (None) |
+
+### 📅 Scheduling Live Streams
+To test scheduling with your own account:
+1.  **Google Cloud Console**: Create an OAuth 2.0 Client ID (Desktop type for Tauri).
+2.  **Scopes**: Ensure `https://www.googleapis.com/auth/youtube.force-ssl` is enabled.
+3.  **App Interface**:
+    - Switch to **Live Streams** mode in the Batch Control Center.
+    - Drag your video and any random image for the thumbnail.
+    - The Rust backend will simulate the multi-step scheduling process (LiveBroadcast -> LiveStream -> Bind).
 
 ### Multi-Tenancy Strategies
 

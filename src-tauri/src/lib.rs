@@ -86,20 +86,24 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
             }
         }
 
-        info!("Rust Worker: Starting job for {}", payload.title);
+        let is_scheduling = payload.scheduled_start_time.is_some();
+        let job_type = if is_scheduling { "Scheduling" } else { "Upload" };
+        
+        info!("Rust Worker: Starting {} job for {}", job_type, payload.title);
         trace!("Job details: {:?}", payload);
         
-        // Simulate long-running upload task
+        // Simulate long-running task
         let job_active_jobs = Arc::clone(&active_jobs);
         let job_payload = payload.clone();
         let job_handle = app_handle.clone();
+        let job_type_label = job_type.to_string();
 
         tauri::async_runtime::spawn(async move {
-            debug!("Task spawned for {}", job_payload.title);
+            debug!("Task spawned for {}: {}", job_type_label, job_payload.title);
             // In a real app, this is where reqwest calls YouTube API
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             
-            info!("Rust Worker: Completed job for {}", job_payload.title);
+            info!("Rust Worker: Completed {} for {}", job_type_label, job_payload.title);
             
             match job_active_jobs.lock() {
                 Ok(mut count) => {
