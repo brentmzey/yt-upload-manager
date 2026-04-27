@@ -4,7 +4,8 @@ import { YouTubeService, YouTubeServiceLive, processBatch } from '../lib/youtube
 import { LoggerServiceLive, logInfo } from '../lib/logger';
 import { VideoMetadataSchema } from '../lib/channel/config';
 import { Option } from 'effect';
-import { RefreshCw, CheckCircle2, XCircle, Loader2, AlertTriangle, Play, RotateCcw, Upload, FileVideo, Plus, Trash2 } from 'lucide-react';
+import { RefreshCw, CheckCircle2, XCircle, Loader2, AlertTriangle, Play, RotateCcw, Upload, FileVideo, Plus, Trash2, ExternalLink } from 'lucide-react';
+import type { YouTubeVideoDetails } from '../bindings/youtube_types';
 
 type BatchTask = {
   id: string;
@@ -12,6 +13,7 @@ type BatchTask = {
   file: File;
   status: 'idle' | 'processing' | 'success' | 'error' | 'queued';
   error?: string;
+  youtubeDetails?: YouTubeVideoDetails;
 };
 
 export const BatchManager: React.FC = () => {
@@ -46,7 +48,7 @@ export const BatchManager: React.FC = () => {
     };
   }, []);
 
-  const createDefaultMetadata = (fileName: string): typeof VideoMetadataSchema.Type => ({
+  const createDefaultMetadata = (fileName: string, scheduleOffsetDays: number): typeof VideoMetadataSchema.Type => ({
     title: fileName.split('.')[0] || 'Untitled Video',
     description: 'Auto-staged via YouTube Upload Manager',
     privacyStatus: 'private',
@@ -60,7 +62,7 @@ export const BatchManager: React.FC = () => {
     categoryId: '22',
     subDetails: {},
     thumbnailUrl: Option.none(),
-    scheduledStartTime: mode === 'schedule' ? Option.some(new Date(Date.now() + 86400000).toISOString()) : Option.none(),
+    scheduledStartTime: mode === 'schedule' ? Option.some(new Date(Date.now() + 86400000 * scheduleOffsetDays).toISOString()) : Option.none(),
     publishAt: Option.none(),
     recordingDate: Option.none(),
     language: Option.some('en'),
@@ -68,9 +70,10 @@ export const BatchManager: React.FC = () => {
   });
 
   const handleFiles = (files: FileList) => {
-    const newTasks: BatchTask[] = Array.from(files).map(file => ({
+    const startIndex = tasks.length;
+    const newTasks: BatchTask[] = Array.from(files).map((file, i) => ({
       id: crypto.randomUUID(),
-      metadata: createDefaultMetadata(file.name),
+      metadata: createDefaultMetadata(file.name, startIndex + i + 1),
       file,
       status: 'idle',
     }));
@@ -111,8 +114,18 @@ export const BatchManager: React.FC = () => {
       const program = processBatch(batch, [task.file], mode);
 
       try {
-        await Effect.runPromise(Effect.provide(program, AppLayer));
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'success' } : t));
+        const result = await Effect.runPromise(Effect.provide(program, AppLayer));
+        const videoIdArray = Array.from(result as any) as string[];
+        const videoId = videoIdArray[0];
+
+        // Fetch details
+        const detailsProgram = Effect.gen(function* (_) {
+          const service = yield* _(YouTubeService);
+          return yield* _(service.getVideoDetails(videoId));
+        });
+        const details = await Effect.runPromise(Effect.provide(detailsProgram, AppLayer));
+
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'success', youtubeDetails: details } : t));
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'error', error: msg } : t));
@@ -159,6 +172,14 @@ export const BatchManager: React.FC = () => {
             >
               Live Streams
             </button>
+          </div>
+        </div>
+
+        <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/50 rounded-xl flex items-start gap-3 text-yellow-800 dark:text-yellow-200 shadow-sm">
+          <AlertTriangle className="shrink-0 mt-0.5 text-yellow-600 dark:text-yellow-400" size={20} />
+          <div>
+            <h4 className="font-bold mb-1 tracking-tight text-yellow-900 dark:text-yellow-100">DISCLAIMER: ORDER DOES MATTER!</h4>
+            <p className="text-sm font-medium opacity-90">Files will be uploaded and scheduled in chronological time. The first file you stage is the most recent/next video/livestream upcoming. Additional files are automatically scheduled incrementally.</p>
           </div>
         </div>
 
@@ -226,13 +247,48 @@ export const BatchManager: React.FC = () => {
                           {task.status === 'error' && <XCircle className="text-red-600 dark:text-red-400" size={18} />}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <FileVideo className="text-slate-300 dark:text-slate-600 shrink-0" size={20} />
-                            <div>
-                              <p className="font-bold text-slate-900 dark:text-white leading-tight">{task.metadata.title}</p>
-                              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{task.metadata.privacyStatus} • {task.metadata.categoryId}</p>
+                          {!task.youtubeDetails ? (
+                            <div className="flex items-center gap-3">
+                              <FileVideo className="text-slate-300 dark:text-slate-600 shrink-0" size={20} />
+                              <div>
+                                <p className="font-bold text-slate-900 dark:text-white leading-tight">{task.metadata.title}</p>
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">{task.metadata.privacyStatus} • {task.metadata.categoryId}</p>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="flex items-start gap-4 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:shadow-md">
+                              <div className="w-32 h-20 bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden shrink-0 relative">
+                                {task.youtubeDetails.thumbnail_url ? (
+                                  <img src={task.youtubeDetails.thumbnail_url} alt="Thumbnail" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                    <FileVideo size={24} />
+                                  </div>
+                                )}
+                                <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                  {task.youtubeDetails.privacy_status.toUpperCase()}
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm line-clamp-2 leading-tight mb-1">
+                                  {task.youtubeDetails.title}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-2">
+                                  {task.youtubeDetails.description || 'No description provided.'}
+                                </p>
+                                <a 
+                                  href={task.youtubeDetails.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                                >
+                                  <ExternalLink size={12} />
+                                  View on YouTube
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                          
                           {task.error && (
                             <div className="mt-2 flex items-start gap-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-900/30 text-[11px] font-medium">
                               <AlertTriangle size={12} className="shrink-0 mt-0.5" />

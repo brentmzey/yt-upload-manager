@@ -6,6 +6,8 @@ use sysinfo::System;
 use tokio::sync::mpsc;
 use thiserror::Error;
 use log::{info, debug, trace, error};
+use std::io::Read;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -13,8 +15,26 @@ pub enum AppError {
     LockError(String),
     #[error("Job queue error: {0}")]
     QueueError(String),
+    #[error("Decompression error: {0}")]
+    DecompressionError(String),
     #[error("Internal error: {0}")]
     Internal(String),
+}
+
+/**
+ * Utility to decompress Brotli data encoded in Base64.
+ * Ensures the Backend can read "last-moment" compressed data from the UI or DB.
+ */
+fn decompress_brotli_b64(encoded: &str) -> Result<String, AppError> {
+    let compressed_data = BASE64.decode(encoded)
+        .map_err(|e| AppError::DecompressionError(format!("Base64 decode failed: {}", e)))?;
+    
+    let mut reader = brotli::Decompressor::new(&compressed_data[..], 4096);
+    let mut decompressed = String::new();
+    reader.read_to_string(&mut decompressed)
+        .map_err(|e| AppError::DecompressionError(format!("Brotli decompress failed: {}", e)))?;
+    
+    Ok(decompressed)
 }
 
 impl Serialize for AppError {
@@ -48,6 +68,7 @@ pub struct VideoMetadataPayload {
     pub publish_at: Option<String>,
     pub recording_date: Option<String>,
     pub language: Option<String>,
+    pub is_compressed: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, TS, Debug, Clone)]
@@ -55,6 +76,18 @@ pub struct VideoMetadataPayload {
 pub struct BatchJobResponse {
     pub video_id: String,
     pub status: String,
+}
+
+#[derive(Serialize, Deserialize, TS, Debug, Clone)]
+#[ts(export, export_to = "../../src/bindings/youtube_types.ts")]
+pub struct YouTubeVideoDetails {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub thumbnail_url: Option<String>,
+    pub privacy_status: String,
+    pub view_count: Option<u64>,
+    pub url: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Debug, Clone)]
@@ -89,7 +122,15 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
         let is_scheduling = payload.scheduled_start_time.is_some();
         let job_type = if is_scheduling { "Scheduling" } else { "Upload" };
         
+        // --- HUMAN READABLE LOGGING REGARDLESS OF COMPRESSION ---
+        let display_desc = if payload.is_compressed.unwrap_or(false) {
+            decompress_brotli_b64(&payload.description).unwrap_or_else(|e| format!("[Decompression Failed: {:?}]", e))
+        } else {
+            payload.description.clone()
+        };
+
         info!("Rust Worker: Starting {} job for {}", job_type, payload.title);
+        debug!("Description (Human Readable): {}", display_desc);
         trace!("Job details: {:?}", payload);
         
         // Simulate long-running task
@@ -170,6 +211,25 @@ mod commands {
             status: "Processing".to_string(),
         })
     }
+
+    #[tauri::command]
+    pub async fn get_youtube_video_details(
+        video_id: String,
+        _state: State<'_, AppState>
+    ) -> AppResult<YouTubeVideoDetails> {
+        info!("Backend: Fetching details for video ID {}", video_id);
+        
+        // Mocking YouTube Data API response for now
+        Ok(YouTubeVideoDetails {
+            id: video_id.clone(),
+            title: format!("Mock YouTube Title for {}", video_id),
+            description: "This is a dummy description fetched from the mock YouTube API.".to_string(),
+            thumbnail_url: Some("https://picsum.photos/640/360".to_string()),
+            privacy_status: "private".to_string(),
+            view_count: Some(0),
+            url: format!("https://youtube.com/watch?v={}", video_id),
+        })
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -204,7 +264,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::start_youtube_upload_job,
-            commands::get_system_status
+            commands::get_system_status,
+            commands::get_youtube_video_details
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -232,13 +293,6 @@ mod tests {
         });
         
         (app, rx)
-    }
-
-    #[test]
-    fn export_bindings() {
-        VideoMetadataPayload::export().expect("Failed to export VideoMetadataPayload");
-        BatchJobResponse::export().expect("Failed to export BatchJobResponse");
-        SystemStatus::export().expect("Failed to export SystemStatus");
     }
 
     #[tokio::test]
@@ -275,6 +329,7 @@ mod tests {
             publish_at: None,
             recording_date: None,
             language: None,
+            is_compressed: None,
         };
 
         let result = commands::start_youtube_upload_job(payload, state).await;

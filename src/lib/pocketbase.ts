@@ -30,7 +30,26 @@ export const PocketBaseServiceLive = Effect.provideService(
     isAuthenticated: () => pb.authStore.isValid,
     authenticateAsAdmin: (email, password) =>
       Effect.tryPromise({
-        try: () => pb.collection('_superusers').authWithPassword(email, password).then(() => {}),
+        try: async () => {
+          try {
+            // Try 0.23+ Superusers
+            await pb.collection('_superusers').authWithPassword(email, password);
+          } catch (e: any) {
+            if (e.status === 404) {
+              // Fallback for legacy Admins (< 0.23.0) with newer SDK (>= 0.23.0)
+              const res = await fetch(`${POCKETBASE_URL}/api/admins/auth-with-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password })
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.message || 'Legacy auth failed');
+              pb.authStore.save(data.token, data.admin);
+            } else {
+              throw e;
+            }
+          }
+        },
         catch: (error) => new PocketBaseError(error),
       }),
   }

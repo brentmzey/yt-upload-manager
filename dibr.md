@@ -1,17 +1,18 @@
 # Developer Initial Build & Run (DIBR) - YouTube Upload Manager
 
-This document provides a low-level reference for the initial setup and build process of the YouTube Upload Manager.
+This document provides a low-level reference for the initial setup and build process of the YouTube Upload Manager. For daily development, use the `just` commands documented in the [README.md](./README.md).
 
 ## 🧱 Environment Bootstrap
 
 ### 1. Nix Pinned Environment
 The project uses Nix to provide a deterministic environment.
 - **Command**: `nix develop`
+- **Effect**: Loads Node.js, Bun, Rust, and PocketBase into your shell.
 
 ### 2. Dependency Resolution
 We use `bun` for the frontend and `cargo` for the backend.
 ```bash
-bun install
+just install
 ```
 
 ## 🛠 Build & Schema Alignment
@@ -19,39 +20,35 @@ bun install
 ### PocketBase Migration
 Align your local PocketBase instance with the optimized schema:
 ```bash
-bun run migrate
+just up
 ```
-This idempotent script sets up `channels`, `batches`, and `staged_videos` with optimized indices and Brotli compression hints.
-
-### Frontend (Astro + React)
-```bash
-bun run build
-```
+This command starts PocketBase in the background, creates a default superuser, and runs the step-wise migration script.
 
 ### Type Linkage (Bindings)
-Generated automatically during `tauri dev` or manually:
+Ensure the Rust backend and TypeScript frontend are in sync:
 ```bash
-cd src-tauri && cargo test export_bindings
+just gen-bindings
 ```
 
 ## 🚀 Execution Reference
 
 ### Development Mode (Desktop)
 ```bash
-bun tauri dev
+just tauri
 ```
 
 ### Web Mode
 ```bash
-bun dev
+just dev
 ```
 
-### Mobile Mode
+### Validation
 ```bash
-bun tauri android dev
-bun tauri ios dev
+just validate
 ```
 
 ## 📋 Common Troubleshooting
-- **SDK Errors**: Ensure you are inside the `nix develop` shell.
-- **Stale Target**: If you see path errors (e.g., `yt-tenant-manager`), run `rm -rf src-tauri/target`.
+- **Command Not Found**: Ensure you are inside the `nix develop` shell.
+- **Port 8090 Already in Use**: Run `just db-stop` to clear any stale PocketBase instances.
+- **Binding Mismatch**: Run `just gen-bindings` to regenerate the TypeScript types from Rust.
+- **Cache Issues**: Run `just fix-cache` to wipe `node_modules/.vite` and `node_modules/.astro`.
