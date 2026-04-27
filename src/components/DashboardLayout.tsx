@@ -3,6 +3,7 @@ import { LayoutDashboard, Video, Radio, Users, Settings, LogOut, Search, Bell, M
 import { ThemeToggle } from './ThemeToggle';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '../lib/env';
+import type { SystemStatus } from '../bindings/youtube_types';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -33,13 +34,13 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, activePage, onPageChange }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [systemStatus, setSystemStatus] = useState<{ cpu_usage: number, active_jobs: number } | null>(null);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
 
   useEffect(() => {
     if (isTauri()) {
       const fetchStatus = async () => {
         try {
-          const status = await invoke<{ cpu_usage: number, active_jobs: number }>('get_system_status');
+          const status = await invoke<SystemStatus>('get_system_status');
           setSystemStatus(status);
         } catch (e) {
           console.error('Failed to fetch system status', e);

@@ -4,7 +4,7 @@ import { logInfo, logError, LoggerService } from '../logger';
 import { enrichMetadata } from './enrichment';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { VideoMetadataPayload, BatchJobResponse } from '../../bindings/youtube_types';
+import type { VideoMetadataPayload, BatchJobResponse, YouTubeVideoDetails } from '../../bindings/youtube_types';
 import { Option } from 'effect';
 import { isTauri } from '../env';
 
@@ -29,6 +29,10 @@ export interface YouTubeService {
   readonly onJobCompleted: (
     handler: (response: BatchJobResponse) => void
   ) => Effect.Effect<() => void, YouTubeError>;
+
+  readonly getVideoDetails: (
+    videoId: string
+  ) => Effect.Effect<YouTubeVideoDetails, YouTubeError>;
 }
 
 export const YouTubeService = Context.GenericTag<YouTubeService>('YouTubeService');
@@ -51,6 +55,7 @@ const toPayload = (metadata: typeof VideoMetadataSchema.Type): VideoMetadataPayl
   publish_at: Option.getOrNull(metadata.publishAt),
   recording_date: Option.getOrNull(metadata.recordingDate),
   language: Option.getOrNull(metadata.language),
+  is_compressed: false, // Metadata sent from UI is raw
 });
 
 // --- TAURI IMPLEMENTATION ---
@@ -92,6 +97,12 @@ export const YouTubeServiceTauri = Layer.succeed(
           return unlisten;
         },
         catch: (error) => new YouTubeError("Failed to subscribe to tauri events", error),
+      }),
+      
+    getVideoDetails: (videoId) =>
+      Effect.tryPromise({
+        try: () => invoke<YouTubeVideoDetails>('get_youtube_video_details', { videoId }),
+        catch: (error) => new YouTubeError("Tauri backend getVideoDetails failed", error),
       }),
   }
 );
@@ -141,6 +152,17 @@ export const YouTubeServiceWeb = Layer.succeed(
 
     onJobCompleted: (_handler) =>
       Effect.sync(() => () => {}),
+
+    getVideoDetails: (videoId) =>
+      Effect.succeed({
+        id: videoId,
+        title: `Mock Edge Backend Title for ${videoId}`,
+        description: "This is a dummy description fetched from the mock Edge Backend API.",
+        thumbnail_url: "https://picsum.photos/640/360",
+        privacy_status: "private",
+        view_count: 0n,
+        url: `https://youtube.com/watch?v=${videoId}`
+      }),
   }
 );
 

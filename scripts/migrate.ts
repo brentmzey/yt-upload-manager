@@ -1,5 +1,4 @@
 import PocketBase from 'pocketbase';
-import { Effect, Console, Schedule } from 'effect';
 
 const PB_URL = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
 const PB_ADMIN_EMAIL = process.env.PB_ADMIN_EMAIL || 'admin@yt-manager.com';
@@ -8,187 +7,193 @@ const PB_ADMIN_PASSWORD = process.env.PB_ADMIN_PASSWORD || 'admin123456';
 const pb = new PocketBase(PB_URL);
 
 /**
- * Ensures the Admin account exists.
- * PocketBase doesn't allow creating the first admin via API if it's completely fresh, 
- * but we can try and catch the failure or use the executable's flags.
- * This script assumes the user might have already run `pocketbase serve`.
+ * Migration Step Definition
  */
+interface MigrationStep {
+  id: string;
+  description: string;
+  run: (pb: PocketBase) => Promise<void>;
+}
+
 async function ensureAdmin() {
   try {
-    // PocketBase 0.23+ uses the '_superusers' collection for admins
+    // Try 0.23+ (Superusers collection)
     await pb.collection('_superusers').authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
     console.log('✅ Authenticated as Superuser.');
-  } catch (error) {
-    console.log('Attempting to create first superuser...');
-    try {
-      // This only works if no superusers exist
-      await pb.collection('_superusers').create({
-        email: PB_ADMIN_EMAIL,
-        password: PB_ADMIN_PASSWORD,
-        passwordConfirm: PB_ADMIN_PASSWORD,
+  } catch (e: any) {
+    // If it's a 404, it might be an older PB version (< 0.23.0)
+    if (e.status === 404) {
+      try {
+        // Try legacy admins API
+        // @ts-ignore - admins was removed/deprecated in newer SDKs but might still work or need manual fetch
+        if (pb.admins) {
+          // @ts-ignore
+          await pb.admins.authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
+        } else {
+          // Manual fallback for newer SDK + older PB
+          const res = await fetch(`${PB_URL}/api/admins/auth-with-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: PB_ADMIN_EMAIL, password: PB_ADMIN_PASSWORD })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.message || 'Legacy auth failed');
+          pb.authStore.save(data.token, data.admin);
+        }
+        console.log('✅ Authenticated as Legacy Admin.');
+        return;
+      } catch (legacyErr) {
+        console.error('❌ Legacy authentication failed.');
+      }
+    }
+    console.error('❌ Authentication failed. Did the "pocketbase superuser/admin create" command succeed?');
+    throw e;
+  }
+}
+
+async function ensureMigrationsCollection() {
+  try {
+    await pb.collections.getOne('internal_migrations');
+  } catch {
+    console.log('✨ Creating internal_migrations collection...');
+    await pb.collections.create({
+      name: 'internal_migrations',
+      type: 'base',
+      fields: [
+        { name: 'migration_id', type: 'text', required: true, nullable: false },
+        { name: 'description', type: 'text' },
+      ],
+    });
+  }
+}
+
+async function isApplied(id: string): Promise<boolean> {
+  try {
+    await pb.collection('internal_migrations').getFirstListItem(`migration_id="${id}"`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function markApplied(id: string, description: string) {
+  await pb.collection('internal_migrations').create({
+    migration_id: id,
+    description: description,
+  });
+}
+
+/**
+ * STEP-WISE MIGRATIONS
+ */
+const migrations: MigrationStep[] = [
+  {
+    id: '2026-04-24-001-init-channels',
+    description: 'Create initial channels collection',
+    run: async (pb) => {
+      await pb.collections.create({
+        name: 'channels',
+        type: 'base',
+        fields: [
+          { name: 'name', type: 'text', required: true },
+          { name: 'handle', type: 'text', required: true },
+          { name: 'status', type: 'select', values: ['active', 'expired', 'pending'] },
+          { name: 'youtube_config_brotli_b64', type: 'text', required: true },
+        ],
+        indexes: [
+          'CREATE UNIQUE INDEX idx_channels_handle ON channels (handle)',
+        ],
       });
-      console.log('✨ Superuser account created.');
-      await pb.collection('_superusers').authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
-    } catch (e) {
-      console.error('❌ Could not authenticate or create superuser. Is PocketBase running?');
-      throw e;
+    }
+  },
+  {
+    id: '2026-04-24-002-init-batches',
+    description: 'Create initial batches collection',
+    run: async (pb) => {
+      await pb.collections.create({
+        name: 'batches',
+        type: 'base',
+        fields: [
+          { name: 'channel_id', type: 'relation', collectionId: 'channels', cascadeDelete: true },
+          { name: 'status', type: 'select', values: ['pending', 'processing', 'completed', 'failed'] },
+          { name: 'priority', type: 'number', required: true },
+        ],
+      });
+    }
+  },
+  {
+    id: '2026-04-24-003-init-staged-videos',
+    description: 'Create staged_videos with Brotli fields',
+    run: async (pb) => {
+      await pb.collections.create({
+        name: 'staged_videos',
+        type: 'base',
+        fields: [
+          { name: 'batch_id', type: 'relation', collectionId: 'batches', cascadeDelete: true },
+          { name: 'status', type: 'select', values: ['idle', 'processing', 'success', 'error'] },
+          { name: 'title', type: 'text', required: true },
+          { name: 'description_brotli_b64', type: 'text', required: true },
+          { name: 'subDetails_brotli_b64', type: 'text', required: true },
+          { name: 'privacyStatus', type: 'select', values: ['public', 'private', 'unlisted'] },
+          { name: 'categoryId', type: 'text', required: true },
+        ],
+      });
+    }
+  },
+  {
+    id: '2026-04-24-004-add-staged-indices',
+    description: 'Add performance indices to staged_videos',
+    run: async (pb) => {
+      const coll = await pb.collections.getOne('staged_videos');
+      coll.indexes = [
+        ...(coll.indexes || []),
+        'CREATE INDEX idx_staged_status ON staged_videos (status)',
+        'CREATE INDEX idx_staged_batch ON staged_videos (batch_id)',
+      ];
+      await pb.collections.update(coll.id, coll);
+    }
+  },
+  {
+    id: '2026-04-24-005-add-compression-hints',
+    description: 'Add is_compressed flag to metadata collections',
+    run: async (pb) => {
+      // Update staged_videos
+      const staged = await pb.collections.getOne('staged_videos');
+      const stagedFields = (staged as any).fields || (staged as any).schema || [];
+      stagedFields.push({ name: 'is_compressed', type: 'bool', required: false });
+      await pb.collections.update(staged.id, { fields: stagedFields });
+
+      // Update channels
+      const channels = await pb.collections.getOne('channels');
+      const channelFields = (channels as any).fields || (channels as any).schema || [];
+      channelFields.push({ name: 'is_compressed', type: 'bool', required: false });
+      await pb.collections.update(channels.id, { fields: channelFields });
     }
   }
-}
+];
 
-async function createOrUpdateCollection(config: any) {
+async function run() {
   try {
-    const existing = await pb.collections.getOne(config.name);
-    console.log(`🔄 Updating collection: ${config.name}...`);
-    // Merge schema to be additive where possible, or just overwrite for simplicity in this dev script
-    await pb.collections.update(existing.id, config);
-  } catch (err) {
-    console.log(`✨ Creating collection: ${config.name}...`);
-    await pb.collections.create(config);
-  }
-}
-
-async function migrate() {
-  try {
-    console.log(`🚀 Connecting to PocketBase at ${PB_URL}...`);
+    console.log(`🚀 Starting step-wise migrations at ${PB_URL}...`);
     await ensureAdmin();
+    await ensureMigrationsCollection();
 
-    // --- 1. Channels Collection ---
-    // Optimized with specific handle index and status-based indexing
-    await createOrUpdateCollection({
-      name: 'channels',
-      type: 'base',
-      schema: [
-        { name: 'name', type: 'text', required: true, options: { min: 1, max: 100 } },
-        { name: 'handle', type: 'text', required: true, options: { pattern: '^@.*' } },
-        { name: 'status', type: 'select', required: true, options: { values: ['active', 'expired', 'pending'] } },
-        { name: 'youtube_config_brotli_b64', type: 'text', required: true }, // Compressed for storage efficiency
-        { name: 'subscriber_count', type: 'number', required: false },
-        { name: 'last_sync', type: 'date', required: false },
-        { name: 'avatar_url', type: 'url', required: false },
-      ],
-      indexes: [
-        'CREATE INDEX idx_channels_name ON channels (name)',
-        'CREATE UNIQUE INDEX idx_channels_handle ON channels (handle)',
-        'CREATE INDEX idx_channels_status ON channels (status)',
-      ],
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: '@request.auth.id != ""',
-      updateRule: '@request.auth.id != ""',
-      deleteRule: '@request.auth.id != ""',
-    });
+    for (const m of migrations) {
+      if (await isApplied(m.id)) {
+        console.log(`⏭️  Skipping applied migration: ${m.id}`);
+        continue;
+      }
+      console.log(`⚙️  Applying migration: ${m.id} (${m.description})...`);
+      await m.run(pb);
+      await markApplied(m.id, m.description);
+      console.log(`✅ Applied: ${m.id}`);
+    }
 
-    // --- 2. Batches Collection ---
-    // Orchestration-ready with worker_id for multi-agent support
-    await createOrUpdateCollection({
-      name: 'batches',
-      type: 'base',
-      schema: [
-        { 
-          name: 'channel_id', 
-          type: 'relation', 
-          required: true,
-          options: { collectionId: 'channels', cascadeDelete: true, maxSelect: 1 }
-        },
-        { 
-          name: 'status', 
-          type: 'select', 
-          required: true,
-          options: { values: ['pending', 'processing', 'completed', 'failed', 'paused'] }
-        },
-        { name: 'scheduled_for', type: 'date', required: false },
-        { name: 'priority', type: 'number', required: true, options: { min: 0, max: 10 } },
-        { name: 'worker_id', type: 'text', required: false }, // For distributed orchestration
-        { name: 'metadata_json', type: 'json', required: false }, // Future-proofing for extra job data
-      ],
-      indexes: [
-        'CREATE INDEX idx_batches_channel ON batches (channel_id)',
-        'CREATE INDEX idx_batches_queue ON batches (status, priority, scheduled_for)',
-        'CREATE INDEX idx_batches_worker ON batches (worker_id)',
-      ],
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: '@request.auth.id != ""',
-      updateRule: '@request.auth.id != ""',
-      deleteRule: '@request.auth.id != ""',
-    });
-
-    // --- 3. Staged Videos Collection ---
-    // Highly indexed for efficient status filtering and retrieval
-    await createOrUpdateCollection({
-      name: 'staged_videos',
-      type: 'base',
-      schema: [
-        { 
-          name: 'batch_id', 
-          type: 'relation', 
-          required: true,
-          options: { collectionId: 'batches', cascadeDelete: true, maxSelect: 1 }
-        },
-        { 
-          name: 'status', 
-          type: 'select', 
-          required: true,
-          options: { values: ['idle', 'processing', 'success', 'error', 'retrying'] }
-        },
-        { name: 'title', type: 'text', required: true, options: { max: 100 } },
-        { name: 'description_brotli_b64', type: 'text', required: true },
-        { name: 'subDetails_brotli_b64', type: 'text', required: true },
-        { name: 'localizations_brotli_b64', type: 'text', required: false },
-        { name: 'tags_json', type: 'json', required: false }, // Store tags as array
-        { 
-          name: 'privacyStatus', 
-          type: 'select', 
-          required: true,
-          options: { values: ['public', 'private', 'unlisted'] }
-        },
-        { name: 'categoryId', type: 'text', required: true },
-        { name: 'scheduledStartTime', type: 'date', required: false },
-        { name: 'video_id', type: 'text', required: false }, // YouTube Video ID after success
-        { name: 'file_hash', type: 'text', required: false }, // Deduplication
-        { name: 'file_size', type: 'number', required: false },
-        { name: 'error_log', type: 'text', required: false },
-      ],
-      indexes: [
-        'CREATE INDEX idx_staged_batch ON staged_videos (batch_id)',
-        'CREATE INDEX idx_staged_status ON staged_videos (status)',
-        'CREATE INDEX idx_staged_schedule ON staged_videos (scheduledStartTime)',
-        'CREATE UNIQUE INDEX idx_staged_vid ON staged_videos (video_id) WHERE video_id != ""',
-        'CREATE INDEX idx_staged_hash ON staged_videos (file_hash)',
-      ],
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: '@request.auth.id != ""',
-      updateRule: '@request.auth.id != ""',
-      deleteRule: '@request.auth.id != ""',
-    });
-
-    // --- 4. Logs Collection ---
-    // New: Performance & Audit logging
-    await createOrUpdateCollection({
-      name: 'system_logs',
-      type: 'base',
-      schema: [
-        { name: 'level', type: 'select', required: true, options: { values: ['info', 'warn', 'error', 'debug'] } },
-        { name: 'message', type: 'text', required: true },
-        { name: 'context_json', type: 'json', required: false },
-        { name: 'source', type: 'text', required: true },
-      ],
-      indexes: [
-        'CREATE INDEX idx_logs_level ON system_logs (level)',
-        'CREATE INDEX idx_logs_created ON system_logs (created)',
-      ],
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: 'true', // Allow logging from clients
-    });
-
-    console.log('✅ All migrations completed successfully.');
+    console.log('✨ All migrations reconciled.');
   } catch (error) {
-    console.error('❌ Migration failed:', error);
+    console.error('❌ Migration error:', error);
     process.exit(1);
   }
 }
 
-migrate();
+run();

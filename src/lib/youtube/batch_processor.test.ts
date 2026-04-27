@@ -11,6 +11,7 @@ describe('Batch Processing Integration', () => {
       uploadVideo: mockUpload,
       scheduleLiveStream: vi.fn(),
       onJobCompleted: vi.fn().mockReturnValue(Effect.succeed(() => {})),
+      getVideoDetails: vi.fn().mockReturnValue(Effect.succeed({} as any)),
     });
 
     // 2. Mock Logger Service

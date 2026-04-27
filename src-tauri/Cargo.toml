@@ -30,3 +30,5 @@ sysinfo = "0.33"
 anyhow = "1.0"
 thiserror = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
+brotli = "7.0"
+base64 = "0.22"
