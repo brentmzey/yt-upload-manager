@@ -1,6 +1,15 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [Unreleased]
+### Added
+- **Chronological Staging**: Batch uploads now automatically calculate sequential scheduled start times.
+- **YouTube Post-Upload Card**: Fetches real YouTube Video Details and displays them as a rich media card upon successful upload.
+- **Order Disclaimer**: Added prominent UI warnings about upload order dependencies.
+
+### Changed
+- Switched UUID generation to `uuid` v4 package instead of Web Crypto API.
+
 
 ## [0.1.0] - 2026-04-24
 ### Added

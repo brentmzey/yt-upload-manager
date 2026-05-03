@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use tauri::{State, Manager, Emitter};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use sysinfo::System;
 use tokio::sync::mpsc;
 use thiserror::Error;
@@ -64,7 +65,9 @@ pub struct VideoMetadataPayload {
     pub category_id: String,
     pub sub_details: std::collections::HashMap<String, String>,
     pub thumbnail_url: Option<String>,
+    pub thumbnail_data_b64: Option<String>,
     pub scheduled_start_time: Option<String>,
+    pub scheduled_start_time_millis: Option<u64>,
     pub publish_at: Option<String>,
     pub recording_date: Option<String>,
     pub language: Option<String>,
@@ -111,6 +114,13 @@ pub struct AppState {
 
 async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, active_jobs: Arc<Mutex<u32>>, app_handle: tauri::AppHandle) {
     debug!("Background worker started");
+    
+    // Check for dummy mode via environment variable
+    let dummy_mode = std::env::var("YT_DUMMY_MODE").map(|v| v == "true").unwrap_or(false);
+    if dummy_mode {
+        info!("Rust Worker: RUNNING IN DUMMY MODE (Simulated latency & failures enabled)");
+    }
+
     while let Some(payload) = rx.recv().await {
         {
             match active_jobs.lock() {
@@ -119,19 +129,17 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
             }
         }
 
-        let is_scheduling = payload.scheduled_start_time.is_some();
+        let is_scheduling = payload.scheduled_start_time.is_some() || payload.scheduled_start_time_millis.is_some();
         let job_type = if is_scheduling { "Scheduling" } else { "Upload" };
         
         // --- HUMAN READABLE LOGGING REGARDLESS OF COMPRESSION ---
-        let display_desc = if payload.is_compressed.unwrap_or(false) {
+        let _display_desc = if payload.is_compressed.unwrap_or(false) {
             decompress_brotli_b64(&payload.description).unwrap_or_else(|e| format!("[Decompression Failed: {:?}]", e))
         } else {
             payload.description.clone()
         };
 
         info!("Rust Worker: Starting {} job for {}", job_type, payload.title);
-        debug!("Description (Human Readable): {}", display_desc);
-        trace!("Job details: {:?}", payload);
         
         // Simulate long-running task
         let job_active_jobs = Arc::clone(&active_jobs);
@@ -141,10 +149,36 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
 
         tauri::async_runtime::spawn(async move {
             debug!("Task spawned for {}: {}", job_type_label, job_payload.title);
-            // In a real app, this is where reqwest calls YouTube API
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             
-            info!("Rust Worker: Completed {} for {}", job_type_label, job_payload.title);
+            if dummy_mode {
+                // Generate latency before any RNG is held across awaits
+                let secs = rand::random_range(2..7);
+                tokio::time::sleep(tokio::time::Duration::from_secs(secs)).await;
+
+                // Generate failure boolean without holding RNG across awaits
+                if rand::random_bool(0.05) {
+                    error!("DUMMY MODE: Simulated random failure for {}", job_payload.title);
+                    job_handle.emit("job-completed", BatchJobResponse {
+                        video_id: "error".to_string(),
+                        status: "Failed: Simulated Quota Error".to_string(),
+                    }).unwrap_or_default();
+                } else {
+                    let fake_id = format!("dummy_yt_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis());
+                    info!("DUMMY MODE: Completed {} for {} -> ID: {}", job_type_label, job_payload.title, fake_id);
+                    job_handle.emit("job-completed", BatchJobResponse {
+                        video_id: fake_id,
+                        status: "Success".to_string(),
+                    }).unwrap_or_default();
+                }
+            } else {
+                // Real implementation (mocked for now)
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                info!("Rust Worker: Completed {} for {}", job_type_label, job_payload.title);
+                job_handle.emit("job-completed", BatchJobResponse {
+                    video_id: "yt-simulated-id".to_string(),
+                    status: "Success".to_string(),
+                }).unwrap_or_default();
+            }
             
             match job_active_jobs.lock() {
                 Ok(mut count) => {
@@ -153,14 +187,6 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
                     }
                 }
                 Err(e) => error!("Failed to lock active_jobs in task: {}", e),
-            }
-
-            // We could emit an event back to the UI here
-            if let Err(e) = job_handle.emit("job-completed", BatchJobResponse {
-                video_id: "yt-simulated-id".to_string(),
-                status: "Success".to_string(),
-            }) {
-                error!("Failed to emit job-completed event: {}", e);
             }
         });
     }
@@ -325,7 +351,9 @@ mod tests {
             category_id: "22".to_string(),
             sub_details: std::collections::HashMap::new(),
             thumbnail_url: None,
+            thumbnail_data_b64: Some("mYgDAOR0ZXN0".to_string()), // Mock base64
             scheduled_start_time: None,
+            scheduled_start_time_millis: Some(1714687200000), // May 2, 2024
             publish_at: None,
             recording_date: None,
             language: None,
@@ -333,11 +361,41 @@ mod tests {
         };
 
         let result = commands::start_youtube_upload_job(payload, state).await;
-        if let Err(ref e) = result {
-            panic!("Command failed with: {:?}", e);
-        }
         assert!(result.is_ok());
         let response = result.unwrap();
         assert_eq!(response.status, "Processing");
+    }
+
+    #[tokio::test]
+    async fn test_get_youtube_video_details() {
+        let (app, _rx) = setup_app();
+        let state: State<AppState> = app.state();
+        
+        let result = commands::get_youtube_video_details("test-id".to_string(), state).await;
+        assert!(result.is_ok());
+        let details = result.unwrap();
+        assert_eq!(details.id, "test-id");
+        assert!(details.url.contains("test-id"));
+    }
+
+    #[test]
+    fn test_decompression() {
+        use brotli::CompressorReader;
+        use std::io::Read;
+
+        let original = "Hello Brotli World";
+        let mut compressor = CompressorReader::new(original.as_bytes(), 4096, 3, 20);
+        let mut compressed = Vec::new();
+        compressor.read_to_end(&mut compressed).unwrap();
+        let encoded = BASE64.encode(compressed);
+
+        let decompressed = decompress_brotli_b64(&encoded).unwrap();
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_decompression_failure() {
+        let result = decompress_brotli_b64("invalid-base64-!@#$");
+        assert!(result.is_err());
     }
 }

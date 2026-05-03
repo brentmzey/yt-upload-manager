@@ -19,11 +19,13 @@ export class YouTubeError {
 export interface YouTubeService {
   readonly uploadVideo: (
     metadata: typeof VideoMetadataSchema.Type,
-    file: Blob
+    file: Blob,
+    thumbnail?: Blob
   ) => Effect.Effect<string, YouTubeError, LoggerService>;
   
   readonly scheduleLiveStream: (
-    metadata: typeof VideoMetadataSchema.Type
+    metadata: typeof VideoMetadataSchema.Type,
+    thumbnail?: Blob
   ) => Effect.Effect<string, YouTubeError, LoggerService>;
 
   readonly onJobCompleted: (
@@ -37,35 +39,62 @@ export interface YouTubeService {
 
 export const YouTubeService = Context.GenericTag<YouTubeService>('YouTubeService');
 
-const toPayload = (metadata: typeof VideoMetadataSchema.Type): VideoMetadataPayload => ({
-  title: metadata.title,
-  description: metadata.description,
-  privacy_status: metadata.privacyStatus,
-  license: metadata.license,
-  embeddable: metadata.embeddable,
-  public_stats_viewable: metadata.publicStatsViewable,
-  made_for_kids: metadata.madeForKids,
-  contains_synthetic_media: metadata.containsSyntheticMedia,
-  paid_product_placement: metadata.paidProductPlacement,
-  tags: [...metadata.tags],
-  category_id: metadata.categoryId,
-  sub_details: metadata.subDetails,
-  thumbnail_url: Option.getOrNull(metadata.thumbnailUrl),
-  scheduled_start_time: Option.getOrNull(metadata.scheduledStartTime),
-  publish_at: Option.getOrNull(metadata.publishAt),
-  recording_date: Option.getOrNull(metadata.recordingDate),
-  language: Option.getOrNull(metadata.language),
-  is_compressed: false, // Metadata sent from UI is raw
-});
+const fileToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1]); // Remove data:image/png;base64,
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
+const toPayload = (metadata: typeof VideoMetadataSchema.Type, thumbnailB64: string | null = null): VideoMetadataPayload => {
+  const scheduledTime = Option.getOrNull(metadata.scheduledStartTime);
+  let millis: bigint | null = null;
+  if (scheduledTime) {
+    try {
+      millis = BigInt(new Date(scheduledTime).getTime());
+    } catch (e) {
+      console.error("Failed to parse scheduled time for millis", e);
+    }
+  }
+
+  return {
+    title: metadata.title,
+    description: metadata.description,
+    privacy_status: metadata.privacyStatus,
+    license: metadata.license,
+    embeddable: metadata.embeddable,
+    public_stats_viewable: metadata.publicStatsViewable,
+    made_for_kids: metadata.madeForKids,
+    contains_synthetic_media: metadata.containsSyntheticMedia,
+    paid_product_placement: metadata.paidProductPlacement,
+    tags: [...metadata.tags],
+    category_id: metadata.categoryId,
+    sub_details: metadata.subDetails,
+    thumbnail_url: Option.getOrNull(metadata.thumbnailUrl),
+    thumbnail_data_b64: thumbnailB64,
+    scheduled_start_time: scheduledTime,
+    scheduled_start_time_millis: millis,
+    publish_at: Option.getOrNull(metadata.publishAt),
+    recording_date: Option.getOrNull(metadata.recordingDate),
+    language: Option.getOrNull(metadata.language),
+    is_compressed: false, // Metadata sent from UI is raw
+  };
+};
 
 // --- TAURI IMPLEMENTATION ---
 export const YouTubeServiceTauri = Layer.succeed(
   YouTubeService,
   {
-    uploadVideo: (metadata, _file) =>
+    uploadVideo: (metadata, _file, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend upload job', { title: metadata.title }));
-        const payload = toPayload(metadata);
+        const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
+        const payload = toPayload(metadata, thumbnailB64);
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -75,10 +104,11 @@ export const YouTubeServiceTauri = Layer.succeed(
         return response.video_id;
       }),
       
-    scheduleLiveStream: (metadata) =>
+    scheduleLiveStream: (metadata, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend scheduling job', { title: metadata.title }));
-        const payload = toPayload(metadata);
+        const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
+        const payload = toPayload(metadata, thumbnailB64);
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -111,13 +141,17 @@ export const YouTubeServiceTauri = Layer.succeed(
 export const YouTubeServiceWeb = Layer.succeed(
   YouTubeService,
   {
-    uploadVideo: (metadata, file) =>
+      uploadVideo: (metadata, file, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending upload to Edge backend', { title: metadata.title }));
         
+        const payload = toPayload(metadata);
         const formData = new FormData();
-        formData.append('metadata', JSON.stringify(toPayload(metadata)));
+        formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         formData.append('video', file);
+        if (thumbnail) {
+          formData.append('thumbnail', thumbnail);
+        }
 
         const response = yield* _(
           Effect.tryPromise({
@@ -132,16 +166,22 @@ export const YouTubeServiceWeb = Layer.succeed(
         return response.video_id;
       }),
       
-    scheduleLiveStream: (metadata) =>
+    scheduleLiveStream: (metadata, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending scheduling to Edge backend', { title: metadata.title }));
         
+        const payload = toPayload(metadata);
+        const formData = new FormData();
+        formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+        if (thumbnail) {
+          formData.append('thumbnail', thumbnail);
+        }
+
         const response = yield* _(
           Effect.tryPromise({
             try: () => fetch(`${EDGE_BACKEND_URL}/schedule`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(toPayload(metadata)),
+              body: formData,
             }).then(r => r.json() as Promise<BatchJobResponse>),
             catch: (error) => new YouTubeError("Web Edge backend scheduling failed", error),
           })
@@ -175,18 +215,20 @@ export const YouTubeServiceLive = isTauri() ? YouTubeServiceTauri : YouTubeServi
 export const processBatch = (
   batch: typeof BatchUploadSchema.Type,
   files: Blob[],
+  thumbnails: (Blob | undefined)[],
   mode: 'upload' | 'schedule'
 ) =>
-  Stream.fromIterable(batch.videos.map((v, i) => ({ metadata: v, file: files[i] })))
+  Stream.fromIterable(batch.videos.map((v, i) => ({ metadata: v, file: files[i], thumbnail: thumbnails[i] })))
     .pipe(
-      Stream.mapEffect(({ metadata, file }) =>
+      Stream.mapEffect(({ metadata, file, thumbnail }) =>
         Effect.gen(function* (_) {
           const enriched = yield* _(enrichMetadata(metadata));
           const service = yield* _(YouTubeService);
           return mode === 'upload' 
-            ? yield* _(service.uploadVideo(enriched, file))
-            : yield* _(service.scheduleLiveStream(enriched));
+            ? yield* _(service.uploadVideo(enriched, file, thumbnail))
+            : yield* _(service.scheduleLiveStream(enriched, thumbnail));
         })
       ),
       Stream.runCollect
     );
+

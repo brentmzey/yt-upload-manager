@@ -12,6 +12,7 @@
     "astro": "astro",
     "tauri": "tauri",
     "migrate": "bun scripts/migrate.ts",
+    "typegen": "bun scripts/generate-types.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -26,6 +27,7 @@
     "@tauri-apps/plugin-store": "^2.4.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^11.0.0",
     "astro": "^6.1.9",
     "brotli-wasm": "^3.0.1",
     "effect": "^3.21.2",
@@ -34,6 +36,7 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "tailwindcss": "^4.2.4",
+    "uuid": "^14.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
