@@ -49,8 +49,9 @@ describe('Batch Processing Integration', () => {
     };
 
     const files = [new Blob(['v1']), new Blob(['v2'])];
+    const thumbnails = [undefined, undefined];
 
-    const program = processBatch(batch, files, 'upload');
+    const program = processBatch(batch, files, thumbnails, 'upload');
     const result = await Effect.runPromise(
       Effect.provide(program, Layer.mergeAll(YouTubeServiceMock, LoggerServiceMock))
     );
@@ -59,7 +60,7 @@ describe('Batch Processing Integration', () => {
     expect(mockUpload).toHaveBeenCalledTimes(2);
     
     // Verify enrichment happened before upload
-    expect(mockUpload).toHaveBeenNthCalledWith(1, expect.objectContaining({ title: 'Video for UserA' }), expect.anything());
-    expect(mockUpload).toHaveBeenNthCalledWith(2, expect.objectContaining({ title: 'Video for UserB' }), expect.anything());
+    expect(mockUpload).toHaveBeenNthCalledWith(1, expect.objectContaining({ title: 'Video for UserA' }), expect.anything(), undefined);
+    expect(mockUpload).toHaveBeenNthCalledWith(2, expect.objectContaining({ title: 'Video for UserB' }), expect.anything(), undefined);
   });
 });

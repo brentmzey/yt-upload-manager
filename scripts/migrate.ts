@@ -154,20 +154,41 @@ const migrations: MigrationStep[] = [
     }
   },
   {
-    id: '2026-04-24-005-add-compression-hints',
-    description: 'Add is_compressed flag to metadata collections',
+    id: '2026-04-24-006-add-staging-and-batches',
+    description: 'Add batches and staged_videos collections for transient staging',
     run: async (pb) => {
-      // Update staged_videos
-      const staged = await pb.collections.getOne('staged_videos');
-      const stagedFields = (staged as any).fields || (staged as any).schema || [];
-      stagedFields.push({ name: 'is_compressed', type: 'bool', required: false });
-      await pb.collections.update(staged.id, { fields: stagedFields });
+      // 1. Create Batches
+      await pb.collections.create({
+        name: 'batches',
+        type: 'base',
+        fields: [
+          { name: 'channel_id', type: 'text', required: true },
+          { name: 'status', type: 'select', values: ['pending', 'processing', 'completed', 'failed'] },
+          { name: 'scheduled_for', type: 'date' },
+        ],
+      });
 
-      // Update channels
-      const channels = await pb.collections.getOne('channels');
-      const channelFields = (channels as any).fields || (channels as any).schema || [];
-      channelFields.push({ name: 'is_compressed', type: 'bool', required: false });
-      await pb.collections.update(channels.id, { fields: channelFields });
+      // 2. Create Staged Videos
+      const batches = await pb.collections.getOne('batches');
+      await pb.collections.create({
+        name: 'staged_videos',
+        type: 'base',
+        fields: [
+          { name: 'batch_id', type: 'relation', collectionId: batches.id, maxSelect: 1, required: true },
+          { name: 'status', type: 'select', values: ['idle', 'processing', 'success', 'error'], required: true },
+          { name: 'title', type: 'text', required: true },
+          { name: 'description_brotli_b64', type: 'text' },
+          { name: 'privacyStatus', type: 'select', values: ['public', 'private', 'unlisted'], required: true },
+          { name: 'license', type: 'text' },
+          { name: 'embeddable', type: 'bool' },
+          { name: 'publicStatsViewable', type: 'bool' },
+          { name: 'madeForKids', type: 'bool' },
+          { name: 'tags', type: 'json' },
+          { name: 'categoryId', type: 'text' },
+          { name: 'scheduledStartTime', type: 'date' },
+          { name: 'sort_order', type: 'number' },
+        ],
+      });
     }
   }
 ];
