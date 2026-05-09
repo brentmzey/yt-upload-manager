@@ -49,6 +49,17 @@ jobs:
         env:
           PUBLIC_YT_DUMMY_MODE: true
           YT_DUMMY_MODE: true
+          PB_ADMIN_EMAIL: test@example.com
+          PB_ADMIN_PASSWORD: test123456
+          POCKETBASE_URL: http://127.0.0.1:8091
+
+      - name: Debug Info (On Failure)
+        if: failure()
+        run: |
+          echo "--- Environment Dump (Safe) ---"
+          env | grep -v "TOKEN\|SECRET\|PASSWORD"
+          echo "--- Directory Structure ---"
+          ls -R
 
       - name: Build Desktop Binaries
         uses: tauri-apps/tauri-action@v0

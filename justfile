@@ -28,24 +28,39 @@ get-pb:
     else
         echo "📥 Downloading PocketBase..."
         VERSION="0.23.1"
-        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        OS_RAW=$(uname -s | tr '[:upper:]' '[:lower:]')
         
-        if [[ "$OS" == *"mingw"* || "$OS" == *"msys"* || "$OS" == *"cygwin"* ]]; then
+        # Map OS
+        if [[ "$OS_RAW" == *"linux"* ]]; then
+            OS="linux"
+        elif [[ "$OS_RAW" == *"darwin"* ]]; then
+            OS="darwin"
+        elif [[ "$OS_RAW" == *"mingw"* || "$OS_RAW" == *"msys"* || "$OS_RAW" == *"cygwin"* || "$OS_RAW" == *"windows"* ]]; then
             OS="windows"
+        else
+            OS="linux" # Fallback
         fi
         
-        # Map macOS architecture
-        ARCH=$(uname -m)
-        if [ "$ARCH" == "x86_64" ]; then ARCH="amd64"; fi
-        if [ "$ARCH" == "aarch64" ]; then ARCH="arm64"; fi
-        if [ "$ARCH" == "arm64" ]; then ARCH="arm64"; fi
+        # Map Architecture
+        ARCH_RAW=$(uname -m)
+        if [[ "$ARCH_RAW" == "x86_64" || "$ARCH_RAW" == "amd64" ]]; then
+            ARCH="amd64"
+        elif [[ "$ARCH_RAW" == "arm64" || "$ARCH_RAW" == "aarch64" ]]; then
+            ARCH="arm64"
+        else
+            ARCH="amd64" # Fallback
+        fi
 
         URL="https://github.com/pocketbase/pocketbase/releases/download/v${VERSION}/pocketbase_${VERSION}_${OS}_${ARCH}.zip"
+        echo "🔗 OS: $OS, ARCH: $ARCH"
         echo "🔗 URL: $URL"
-        curl -L "$URL" -o pb.zip
+        
+        # Use curl with retries
+        curl -L --retry 3 --retry-delay 2 "$URL" -o pb.zip
         unzip -o pb.zip
         rm pb.zip
         chmod +x pocketbase || true
+        [ -f pocketbase.exe ] && chmod +x pocketbase.exe || true
         echo "✅ PocketBase downloaded."
     fi
 
