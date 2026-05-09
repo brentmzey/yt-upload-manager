@@ -98,6 +98,49 @@ In the `s_tenants` table, use the `metadata_json` column for lifecycle tracking:
 
 ---
 
+## 4. Local Smoke Test Guide (Standard Operating Procedure)
+
+To verify the entire multi-tenant system works end-to-end on your local machine, follow this specific sequence across **three terminal windows**.
+
+### Window 1: The System Registry (Central Node)
+This simulates the global directory that the app uses to find client databases.
+```bash
+just main-up
+```
+- **Status**: It will sit and serve on `http://127.0.0.1:8080`.
+- **Admin**: `admin@yt-manager.com` / `admin123456`.
+
+### Window 2: The Tenant Instance (Client Node)
+This is the isolated database for a specific client (e.g., Acme Corp).
+```bash
+just up
+```
+- **Status**: It will sit and serve on `http://127.0.0.1:8090`.
+- **Admin**: `admin@yt-manager.com` / `admin123456`.
+
+### Window 3: Orchestration & App Launch
+Now that both databases are running, synchronize them and launch the app.
+
+**1. Align the fleet:**
+```bash
+just sync-tenants
+```
+- *What happens?* It connects to `8080` (Registry), finds the "Local Development Tenant", connects to `8090` (Client Node), and pushes the latest tables and indices.
+
+**2. Launch the Application:**
+```bash
+just tauri   # For Desktop
+# OR
+just dev     # For Web
+```
+
+### Verification Checklist
+- [ ] **Identity**: Look at the Log Console in the app. It should show: `Connecting to local-dev node...`
+- [ ] **Data Flow**: Go to "Batch Manager". Create a test batch. It should save successfully to the `:8090` database.
+- [ ] **Fleet Sync**: Add a new column to a collection in `scripts/migrate.ts`, run `just sync-tenants`, and verify the column appears in the `:8090` admin UI.
+
+---
+
 ## 5. Migration & Identity Integrity
 
 To ensure every dedicated Client DB knows its global identity, our migration system implements **Cross-Registry Mapping**.

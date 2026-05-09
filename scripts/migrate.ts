@@ -47,7 +47,13 @@ async function ensureAdmin() {
         console.error('❌ Legacy authentication failed.');
       }
     }
-    console.error('❌ Authentication failed. Did the "pocketbase superuser/admin create" command succeed?');
+
+    if (e.code === 'ConnectionRefused' || e.message?.includes('ECONNREFUSED')) {
+      console.error(`\n❌ ERROR: Could not connect to PocketBase at ${PB_URL}`);
+      console.error(`💡 Is the server running? For local testing, run 'just up' in a separate terminal.\n`);
+    } else {
+      console.error('❌ Authentication failed. Did the "pocketbase superuser/admin create" command succeed?');
+    }
     throw e;
   }
 }
