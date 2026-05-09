@@ -13,6 +13,10 @@ default:
 setup: install gen-bindings get-pb
     @echo "✅ Project initialized and ready for development."
 
+# Interactive wizard to set up environment variables (.env)
+bootstrap:
+    bun run scripts/bootstrap.ts
+
 # Install all dependencies (Frontend + Backend)
 install:
     bun install
