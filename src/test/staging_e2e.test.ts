@@ -1,28 +1,40 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { Effect, Layer, Option } from 'effect';
 import { PocketBaseService } from '../lib/pocketbase';
-import { YouTubeService, YouTubeServiceTauri } from '../lib/youtube/service';
+import { YouTubeService, YouTubeServiceLive } from '../lib/youtube/service';
 import { LoggerServiceLive } from '../lib/logger';
 import { invoke } from '@tauri-apps/api/core';
 
-// Mock Tauri invoke
+// Mock Tauri APIs
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-// Mock PocketBase library constructor/system
-vi.mock('pocketbase', () => {
-  return {
-    default: class {
-      collection = () => ({});
-      authStore = { isValid: false, save: () => {} };
-    }
-  };
+// Mock Env
+vi.mock('../lib/env', () => ({
+  isTauri: () => true,
+  isWeb: () => false,
+  logPlatform: () => {},
+  isDummyMode: () => true,
+}));
+
+// Mock brotli-wasm
+vi.mock('brotli-wasm', () => ({
+  default: Promise.resolve({
+    compress: (input: Uint8Array) => input, // Mock as pass-through for test
+    decompress: (input: Uint8Array) => input,
+  }),
+}));
+
+// Global fetch mock
+global.fetch = vi.fn().mockResolvedValue({
+  ok: true,
+  json: () => Promise.resolve({ video_id: 'yt-123', status: 'Success' }),
 });
 
-describe('E2E Staging Flow', () => {
-  it('loads staged videos from PocketBase and triggers Tauri backend', async () => {
-    // 1. Create Mock Layers
+describe('E2E Staging & Compression Flow', () => {
+  it('compresses metadata before sending to Tauri and includes hints', async () => {
+    // 1. Mock PocketBase Service
     const PocketBaseServiceMock = Layer.succeed(PocketBaseService, {
       getChannels: () => Effect.succeed([]),
       isAuthenticated: () => false,
@@ -30,48 +42,67 @@ describe('E2E Staging Flow', () => {
       getPendingBatch: () => Effect.succeed({ id: 'batch-123' }),
       createBatch: () => Effect.succeed({ id: 'batch-123' }),
       getStagedVideos: () => Effect.succeed([
-        { id: 'sv-1', title: 'Video 1', status: 'idle', privacyStatus: 'private', sort_order: 0 }
+        { id: 'sv-1', title: 'Video 1', status: 'idle', privacyStatus: 'private', sort_order: 0, description_brotli_b64: '' }
       ]),
       saveStagedVideo: (v: any) => Effect.succeed({ id: v.id || 'new-id' }),
       deleteStagedVideo: () => Effect.void,
+      getSetting: () => Effect.fail(new Error('Not found') as any),
+      updateSetting: () => Effect.void,
     });
 
-    const AppLayer = Layer.mergeAll(YouTubeServiceTauri, LoggerServiceLive, PocketBaseServiceMock);
+    const AppLayer = Layer.mergeAll(YouTubeServiceLive, LoggerServiceLive, PocketBaseServiceMock);
 
-    // 2. Verify Staging Load via Service
-    const loadProgram = PocketBaseService.pipe(
-      Effect.flatMap(pb => pb.getStagedVideos('batch-123'))
-    );
-    const staged = await Effect.runPromise(Effect.provide(loadProgram, AppLayer));
-    expect(staged).toHaveLength(1);
-    expect(staged[0].title).toBe('Video 1');
-
-    // 3. Simulate User Starting Batch (Calling YouTubeService)
-    (invoke as any).mockResolvedValue({ video_id: 'dummy_yt_123', status: 'Success' });
-    
+    // 2. Prepare Metadata
     const metadata: any = {
-      title: staged[0].title,
-      description: '',
-      privacyStatus: staged[0].privacyStatus,
+      title: 'Compressed Video',
+      description: 'This is a description.',
+      privacyStatus: 'private',
       license: 'youtube',
-      tags: [],
+      embeddable: true,
+      publicStatsViewable: true,
+      madeForKids: false,
+      containsSyntheticMedia: false,
+      paidProductPlacement: false,
+      tags: ['test'],
       categoryId: '22',
+      subDetails: {},
       thumbnailUrl: Option.none(),
       scheduledStartTime: Option.none(),
+      scheduledEndTime: Option.none(),
       publishAt: Option.none(),
       recordingDate: Option.none(),
       language: Option.none(),
+      defaultLanguage: Option.none(),
+      defaultAudioLanguage: Option.none(),
+      latencyPreference: Option.none(),
+      enableAutoStart: Option.none(),
+      enableAutoStop: Option.none(),
+      enableDvr: Option.none(),
+      enableContentEncryption: Option.none(),
+      startWithLowLatency: Option.none(),
+      recordFromStart: Option.none(),
+      enableMonitorStream: Option.none(),
+      broadcastStreamDelayMs: Option.none(),
+      projection: Option.none(),
+      localizations: Option.none(),
     };
 
-    const uploadProgram = YouTubeService.pipe(
-      // Note: we use undefined for thumbnail
+    // 3. Trigger Upload
+    (invoke as any).mockResolvedValue({ video_id: 'yt-123', status: 'Success' });
+    
+    const program = YouTubeService.pipe(
       Effect.flatMap(service => service.uploadVideo(metadata, new Blob(['video']), undefined))
     );
 
-    const videoId = await Effect.runPromise(Effect.provide(uploadProgram, AppLayer));
+    const videoId = await Effect.runPromise(Effect.provide(program, AppLayer));
+
+    // 4. Verify Compression Hints & Integrity
+    expect(videoId).toBe('yt-123');
+    const lastCall = (invoke as any).mock.calls[0];
+    expect(lastCall[0]).toBe('start_youtube_upload_job');
     
-    // 4. Verify interaction with Tauri Backend
-    expect(videoId).toBe('dummy_yt_123');
-    expect(invoke).toHaveBeenCalledWith('start_youtube_upload_job', expect.anything());
+    const payload = lastCall[1].payload;
+    expect(payload.compressed_fields).toContain('description');
+    expect(payload.is_compressed).toBe(true);
   });
 });

@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' https://api.dicebear.com https://*.googleusercontent.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:8090 https://*.googleapis.com"
+      "csp": "default-src 'self'; img-src 'self' https://api.dicebear.com https://*.googleusercontent.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* https://*.googleapis.com https://*.pockethost.io"
     }
   },
   "bundle": {

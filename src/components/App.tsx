@@ -3,10 +3,34 @@ import { DashboardLayout } from './DashboardLayout';
 import { BatchManager } from './BatchManager';
 import { ChannelManager } from './ChannelManager';
 import { LogConsole } from './LogConsole';
-import { LayoutDashboard, Video, Radio, Users, Settings, Plus } from 'lucide-react';
+import { LayoutDashboard, Video, Radio, Users, Settings, Plus, Loader2 } from 'lucide-react';
+import { TenantProvider, useTenant } from '../lib/tenant_context';
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const [activePage, setActivePage] = useState('dashboard');
+  const { tenant, isLoading, error } = useTenant();
+
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Loader2 className="animate-spin text-indigo-600 mb-4" size={48} />
+        <p className="text-slate-500 font-bold tracking-widest uppercase text-xs">Bootstrapping Application...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-8 text-center">
+        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-600 mb-6">
+          <Settings size={32} />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Configuration Error</h2>
+        <p className="text-slate-500 max-w-md mb-8">{error}</p>
+        <button onClick={() => window.location.reload()} className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-3 rounded-xl font-bold">Retry Boot</button>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (activePage) {
@@ -114,5 +138,13 @@ export const App: React.FC = () => {
       {renderContent()}
       <LogConsole />
     </DashboardLayout>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <TenantProvider>
+      <AppContent />
+    </TenantProvider>
   );
 };

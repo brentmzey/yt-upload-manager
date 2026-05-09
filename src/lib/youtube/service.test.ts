@@ -24,9 +24,23 @@ describe('YouTubeService', () => {
     subDetails: {},
     thumbnailUrl: Option.none(),
     scheduledStartTime: Option.some('2024-05-02T12:00:00Z'),
+    scheduledEndTime: Option.none(),
     publishAt: Option.none(),
     recordingDate: Option.none(),
     language: Option.none(),
+    defaultLanguage: Option.none(),
+    defaultAudioLanguage: Option.none(),
+    latencyPreference: Option.none(),
+    enableAutoStart: Option.none(),
+    enableAutoStop: Option.none(),
+    enableDvr: Option.none(),
+    enableContentEncryption: Option.none(),
+    startWithLowLatency: Option.none(),
+    recordFromStart: Option.none(),
+    enableMonitorStream: Option.none(),
+    broadcastStreamDelayMs: Option.none(),
+    projection: Option.none(),
+    localizations: Option.none(),
   };
 
   describe('YouTubeServiceWeb', () => {

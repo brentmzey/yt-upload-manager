@@ -18,6 +18,20 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       exclude: ['node_modules/', 'src/test/setup.ts'],
     },
+    exclude: process.env.RUN_INTEGRATION_TESTS ? [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest}.config.*'
+    ] : [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest}.config.*',
+      'src/test/integration_pocketbase.test.ts'
+    ],
   },
   resolve: {
     alias: {

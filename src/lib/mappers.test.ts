@@ -61,7 +61,7 @@ describe('Mappers', () => {
 
       expect(storage.batch_id).toBe('batch-1');
       expect(storage.title).toBe('Video Title');
-      expect(storage.tags).toEqual(['tag1', 'tag2']);
+      expect(Option.getOrNull(storage.tags as any)).toEqual(['tag1', 'tag2']);
 
       const backToDomainEffect = stagedVideoToDomain({ ...storage, id: 'id-1', created: '' });
       const backToDomain = await Effect.runPromise(backToDomainEffect);

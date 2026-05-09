@@ -1,8 +1,28 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-## [Unreleased]
+## [0.2.0] - 2026-05-09
 ### Added
+- **Multi-Tenant Architecture**: Implemented a "Registry + Distributed Node" model, allowing a single frontend to serve multiple clients with dedicated database isolation.
+- **System Registry**: Central management database to orchestrate client identities, infrastructure URIs, and configuration properties.
+- **Fleet Synchronization**: Automated `just sync-tenants` command to push schema updates and identity mappings to all registered client instances simultaneously.
+- **Tenant-Agnostic Frontend**: Automated tenant identification via hostname (Web) or environment overrides (Desktop).
+- **Professional Stability Suite**: Finalized `just full-check` automation encompassing setup, cross-platform testing, and full binary compilation.
+- **Enhanced Documentation**: Added `MULTI_TENANT_OPS.md` and `STABILITY_REPORT.md` for professional handover.
+
+### Changed
+- Refactored Service Layer to use dynamic Effect-TS Layers injected via `TenantProvider`.
+- Updated `.gitignore` to reflect professional-grade repository standards.
+- Optimized CI/CD pipeline for cross-platform binary notarization readiness.
+
+## [0.1.1] - 2026-05-04
+### Added
+- **Advanced Stream Scheduling UX**: Ability to bulk-create stream placeholders without uploading video files.
+- **Rich Stream Configuration**: Exposed latency preference, auto-start, auto-stop, and DVR options in the staging editor.
+- **Database Schema Enrichment**: Added `is_archived`, `notes`, and `metadata_json` columns across core entities for future-proofing and auditing.
+- **Performance Indices**: Added database indices on scheduled dates and archiving status.
+- **Automated PocketBase Setup**: Scripts now handle `superuser upsert` and port-mapping automatically across all environments to eliminate manual "installer" flows.
+- **Documentation**: Added comprehensive `YOUTUBE_OAUTH_SETUP.md` guide for power users.
 - **Chronological Staging**: Batch uploads now automatically calculate sequential scheduled start times.
 - **YouTube Post-Upload Card**: Fetches real YouTube Video Details and displays them as a rich media card upon successful upload.
 - **Order Disclaimer**: Added prominent UI warnings about upload order dependencies.

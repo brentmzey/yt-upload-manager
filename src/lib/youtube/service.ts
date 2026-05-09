@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { VideoMetadataPayload, BatchJobResponse, YouTubeVideoDetails } from '../../bindings/youtube_types';
 import { Option } from 'effect';
 import { isTauri } from '../env';
+import { compressToBrotliB64 } from '../compression';
 
 // 12-Factor: Edge backend URL for web environment
 const EDGE_BACKEND_URL = import.meta.env.PUBLIC_EDGE_BACKEND_URL || 'https://api.yt-manager.com';
@@ -51,7 +52,7 @@ const fileToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-const toPayload = (metadata: typeof VideoMetadataSchema.Type, thumbnailB64: string | null = null): VideoMetadataPayload => {
+const toPayload = async (metadata: typeof VideoMetadataSchema.Type, thumbnailB64: string | null = null): Promise<VideoMetadataPayload> => {
   const scheduledTime = Option.getOrNull(metadata.scheduledStartTime);
   let millis: bigint | null = null;
   if (scheduledTime) {
@@ -62,9 +63,21 @@ const toPayload = (metadata: typeof VideoMetadataSchema.Type, thumbnailB64: stri
     }
   }
 
+  // Handle compression at the boundary
+  const compressedFields: string[] = [];
+  let description = metadata.description;
+  
+  try {
+    const descResult = await Effect.runPromise(compressToBrotliB64(description));
+    description = descResult;
+    compressedFields.push('description');
+  } catch (e) {
+    console.error("Compression failed at boundary, falling back to raw", e);
+  }
+
   return {
     title: metadata.title,
-    description: metadata.description,
+    description,
     privacy_status: metadata.privacyStatus,
     license: metadata.license,
     embeddable: metadata.embeddable,
@@ -79,10 +92,24 @@ const toPayload = (metadata: typeof VideoMetadataSchema.Type, thumbnailB64: stri
     thumbnail_data_b64: thumbnailB64,
     scheduled_start_time: scheduledTime,
     scheduled_start_time_millis: millis,
+    scheduled_end_time: Option.getOrNull(metadata.scheduledEndTime),
     publish_at: Option.getOrNull(metadata.publishAt),
     recording_date: Option.getOrNull(metadata.recordingDate),
     language: Option.getOrNull(metadata.language),
-    is_compressed: false, // Metadata sent from UI is raw
+    default_language: Option.getOrNull(metadata.defaultLanguage),
+    default_audio_language: Option.getOrNull(metadata.defaultAudioLanguage),
+    latency_preference: Option.getOrNull(metadata.latencyPreference),
+    enable_auto_start: Option.getOrNull(metadata.enableAutoStart),
+    enable_auto_stop: Option.getOrNull(metadata.enableAutoStop),
+    enable_dvr: Option.getOrNull(metadata.enableDvr),
+    enable_content_encryption: Option.getOrNull(metadata.enableContentEncryption),
+    start_with_low_latency: Option.getOrNull(metadata.startWithLowLatency),
+    record_from_start: Option.getOrNull(metadata.recordFromStart),
+    enable_monitor_stream: Option.getOrNull(metadata.enableMonitorStream),
+    broadcast_stream_delay_ms: Option.getOrNull(metadata.broadcastStreamDelayMs),
+    projection: Option.getOrNull(metadata.projection),
+    is_compressed: compressedFields.length > 0,
+    compressed_fields: compressedFields,
   };
 };
 
@@ -94,7 +121,7 @@ export const YouTubeServiceTauri = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend upload job', { title: metadata.title }));
         const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
-        const payload = toPayload(metadata, thumbnailB64);
+        const payload = yield* _(Effect.promise(() => toPayload(metadata, thumbnailB64)));
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -108,7 +135,7 @@ export const YouTubeServiceTauri = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend scheduling job', { title: metadata.title }));
         const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
-        const payload = toPayload(metadata, thumbnailB64);
+        const payload = yield* _(Effect.promise(() => toPayload(metadata, thumbnailB64)));
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -145,7 +172,7 @@ export const YouTubeServiceWeb = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending upload to Edge backend', { title: metadata.title }));
         
-        const payload = toPayload(metadata);
+        const payload = yield* _(Effect.promise(() => toPayload(metadata)));
         const formData = new FormData();
         formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         formData.append('video', file);
@@ -170,7 +197,7 @@ export const YouTubeServiceWeb = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending scheduling to Edge backend', { title: metadata.title }));
         
-        const payload = toPayload(metadata);
+        const payload = yield* _(Effect.promise(() => toPayload(metadata)));
         const formData = new FormData();
         formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         if (thumbnail) {
@@ -217,8 +244,22 @@ export const processBatch = (
   files: Blob[],
   thumbnails: (Blob | undefined)[],
   mode: 'upload' | 'schedule'
-) =>
-  Stream.fromIterable(batch.videos.map((v, i) => ({ metadata: v, file: files[i], thumbnail: thumbnails[i] })))
+) => {
+  // 1. Prepare tasks with original indices to keep track of files/thumbnails
+  const tasks = batch.videos.map((v, i) => ({ metadata: v, file: files[i], thumbnail: thumbnails[i] }));
+  
+  // 2. Sort by scheduledStartTime if in schedule mode
+  if (mode === 'schedule') {
+    tasks.sort((a, b) => {
+      const timeA = Option.getOrNull(a.metadata.scheduledStartTime);
+      const timeB = Option.getOrNull(b.metadata.scheduledStartTime);
+      if (!timeA) return 1;
+      if (!timeB) return -1;
+      return new Date(timeA).getTime() - new Date(timeB).getTime();
+    });
+  }
+
+  return Stream.fromIterable(tasks)
     .pipe(
       Stream.mapEffect(({ metadata, file, thumbnail }) =>
         Effect.gen(function* (_) {
@@ -231,4 +272,5 @@ export const processBatch = (
       ),
       Stream.runCollect
     );
+};
 
