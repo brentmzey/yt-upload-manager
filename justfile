@@ -9,8 +9,8 @@ default:
 
 # --- Setup & Initialize ---
 
-# Full project initialization (deps + bindings)
-setup: install gen-bindings
+# Full project initialization (deps + bindings + database binary)
+setup: install gen-bindings get-pb
     @echo "✅ Project initialized and ready for development."
 
 # Install all dependencies (Frontend + Backend)
@@ -18,11 +18,54 @@ install:
     bun install
     cd src-tauri && cargo fetch
 
+# Download PocketBase binary if not in PATH
+get-pb:
+    #!/usr/bin/env bash
+    if command -v pocketbase &> /dev/null; then
+        echo "✅ PocketBase already in PATH"
+    elif [ -f "./pocketbase" ] || [ -f "./pocketbase.exe" ]; then
+        echo "✅ PocketBase already exists in project root"
+    else
+        echo "📥 Downloading PocketBase..."
+        VERSION="0.23.1"
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        
+        if [[ "$OS" == *"mingw"* || "$OS" == *"msys"* || "$OS" == *"cygwin"* ]]; then
+            OS="windows"
+        fi
+        
+        # Map macOS architecture
+        ARCH=$(uname -m)
+        if [ "$ARCH" == "x86_64" ]; then ARCH="amd64"; fi
+        if [ "$ARCH" == "aarch64" ]; then ARCH="arm64"; fi
+        if [ "$ARCH" == "arm64" ]; then ARCH="arm64"; fi
+
+        URL="https://github.com/pocketbase/pocketbase/releases/download/v${VERSION}/pocketbase_${VERSION}_${OS}_${ARCH}.zip"
+        echo "🔗 URL: $URL"
+        curl -L "$URL" -o pb.zip
+        unzip -o pb.zip
+        rm pb.zip
+        chmod +x pocketbase || true
+        echo "✅ PocketBase downloaded."
+    fi
+
 # Regenerate TypeScript bindings from Rust source
 gen-bindings:
     @echo "⚙️  Generating TypeScript bindings..."
     cd src-tauri && cargo test export_bindings -- --quiet
     @echo "✅ Bindings synchronized to src/bindings/youtube_types.ts"
+
+# Run Continuous Integration suite
+ci: test integration build-web
+    @echo "✅ CI suite passed."
+
+# Build all target artifacts
+build-all: build-web build-tauri
+    @echo "📦 All platform artifacts (Web + Desktop) built successfully."
+
+# Automate EVERYTHING: Setup, Test, and Build
+full-check: setup ci build-all
+    @echo "🚀 COMPLETE AUTOMATION SUCCESSFUL: Project is fully verified and built."
 
 # --- Development ---
 
@@ -34,23 +77,91 @@ dev:
 tauri:
     bun tauri dev
 
-# Start PocketBase and apply migrations automatically
-up: db-stop
-    @echo "🚀 Starting PocketBase..."
-    (pocketbase serve &) && sleep 2 && \
-    (pocketbase superuser create {{env_var_or_default("PB_ADMIN_EMAIL", "admin@yt-manager.com")}} {{env_var_or_default("PB_ADMIN_PASSWORD", "admin123456")}} || true) && \
-    bun migrate
-    @echo "✅ Database is up and migrations applied."
+# Start PocketBase and apply migrations automatically (Local/Tenant DB)
+up: db-stop get-pb
+    #!/usr/bin/env bash
+    set -e
+    echo "🚀 Preparing Local/Tenant PocketBase..."
+    
+    # Determine the correct binary
+    if [ -f "./pocketbase" ]; then
+        PB="./pocketbase"
+    elif command -v pocketbase &> /dev/null; then
+        PB="pocketbase"
+    else
+        echo "❌ PocketBase binary not found. Run 'just get-pb' first."
+        exit 1
+    fi
+
+    # Ensure Admin account exists BEFORE serving
+    echo "👤 Ensuring Admin account exists..."
+    $PB superuser upsert admin@yt-manager.com admin123456 > /dev/null
+
+    # Start PB in background with auto-migrations DISABLED
+    echo "📡 Starting server on http://127.0.0.1:8090..."
+    $PB serve --automigrate=false --migrationsDir=pb_migrations_empty &
+    PB_PID=$!
+    
+    # Give it a moment to boot
+    sleep 3
+    
+    echo "⚙️  Running local tenant migrations..."
+    PB_ADMIN_EMAIL=admin@yt-manager.com PB_ADMIN_PASSWORD=admin123456 bun run migrate
+    
+    echo "✅ Local Database is up and migrations applied."
+    echo "💡 PocketBase is running in background (PID: $PB_PID). Use 'just db-stop' to kill it."
+
+# --- Multi-Tenant Architecture ---
+
+# Start the Main Registry Database (simulating the central node)
+main-up: get-pb
+    #!/usr/bin/env bash
+    set -e
+    echo "🚀 Preparing MAIN Registry PocketBase..."
+    # Ensure superuser exists
+    ./pocketbase superuser upsert --dir=pb_data_main admin@yt-manager.com admin123456 > /dev/null
+    
+    echo "📡 Starting MAIN server on http://127.0.0.1:8080..."
+    ./pocketbase serve --http=127.0.0.1:8080 --dir=pb_data_main --automigrate=false --migrationsDir=pb_migrations_empty &
+    PB_MAIN_PID=$!
+    sleep 3
+    
+    echo "⚙️  Running Main DB migrations..."
+    MAIN_POCKETBASE_URL=http://127.0.0.1:8080 bun run scripts/migrate-main.ts
+    
+    echo "✅ Main Database is up."
+    echo $PB_MAIN_PID > .main_pb_pid
+    echo "💡 Run 'just main-stop' to kill it."
+
+main-stop:
+    @[ -f .main_pb_pid ] && kill $(cat .main_pb_pid) && rm .main_pb_pid && echo "🛑 Main PB stopped." || true
+
+# Programmatically align schemas across ALL registered tenant databases
+sync-tenants:
+    bun run scripts/sync-all-tenants.ts
+
+# Add or update a property for a tenant in the registry
+# Usage: just set-tenant-prop <slug> <key> <value> [category] [is_secret]
+set-tenant-prop slug key value category='general' is_secret='false':
+    bun run scripts/add-tenant-property.ts {{slug}} {{key}} {{value}} {{category}} {{is_secret}}
+
+
 
 # --- Quality & Validation ---
 
-# Run the full validation suite (Lint + Test + Bindings)
-validate: lint test gen-bindings
-    @echo "✅ All validations passed."
-
-# Run TypeScript type checking
-lint:
-    bun x tsc --noEmit
+# Run full integration tests with a real PocketBase instance
+integration: stop-test-pb test-pb
+    #!/usr/bin/env bash
+    set -e
+    echo "🧪 Running Integration Tests..."
+    # Apply migrations to test DB
+    POCKETBASE_URL=http://127.0.0.1:8091 PB_ADMIN_EMAIL=test@example.com PB_ADMIN_PASSWORD=test123456 bun run migrate
+    
+    # Run vitest targeting the integration test file
+    RUN_INTEGRATION_TESTS=1 VITE_TEST_PB_URL=http://127.0.0.1:8091 bun run test src/test/integration_pocketbase.test.ts
+    
+    just stop-test-pb
+    echo "✅ Integration tests passed."
 
 # Run Vitest test suite
 test:
@@ -75,6 +186,29 @@ check-env:
 db-stop:
     @-lsof -t -i :8090 | xargs kill -9 2>/dev/null || true
     @echo "🛑 PocketBase stopped."
+
+# Start an isolated PocketBase for integration testing
+test-pb: get-pb
+    #!/usr/bin/env bash
+    set -e
+    echo "🧪 Preparing Test PocketBase..."
+    # Kill any existing test PB
+    lsof -t -i :8091 | xargs kill -9 2>/dev/null || true
+    rm -rf pb_data_test
+    
+    # Create superuser BEFORE serving
+    ./pocketbase superuser upsert --dir=pb_data_test test@example.com test123456 > /dev/null
+    
+    echo "📡 Starting Test server on http://127.0.0.1:8091..."
+    ./pocketbase serve --http=127.0.0.1:8091 --dir=pb_data_test --automigrate=false --migrationsDir=pb_migrations_empty &
+    PB_PID=$!
+    sleep 2
+    
+    echo "✅ Test Database is ready on port 8091."
+    echo $PB_PID > .test_pb_pid
+
+stop-test-pb:
+    @[ -f .test_pb_pid ] && kill $(cat .test_pb_pid) && rm .test_pb_pid && echo "🛑 Test PB stopped." || true
 
 # Run migrations on a running PocketBase instance
 migrate:

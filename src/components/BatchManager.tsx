@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Effect, Layer } from 'effect';
 import { YouTubeService, YouTubeServiceLive, processBatch } from '../lib/youtube/service';
-import { LoggerServiceLive, logInfo } from '../lib/logger';
+import { LoggerService, LoggerServiceLive, logInfo, logError } from '../lib/logger';
 import { VideoMetadataSchema } from '../lib/channel/config';
 import { PocketBaseService, PocketBaseServiceLive } from '../lib/pocketbase';
 import { Option } from 'effect';
@@ -10,8 +10,10 @@ import {
   Play, RotateCcw, Upload, FileVideo, Trash2, ExternalLink,
   GripVertical, ChevronUp, ChevronDown, Edit3, Save, X, Image as ImageIcon
 } from 'lucide-react';
+import { decompressFromBrotliB64, compressToBrotliB64 } from '../lib/compression';
 import type { YouTubeVideoDetails } from '../bindings/youtube_types';
 import { v4 as uuidv4 } from 'uuid';
+import { useTenant } from '../lib/tenant_context';
 
 type BatchTask = {
   id: string; // Internal UUID
@@ -22,10 +24,14 @@ type BatchTask = {
   status: 'idle' | 'processing' | 'success' | 'error' | 'queued';
   error?: string;
   youtubeDetails?: YouTubeVideoDetails;
+  created?: string;
+  finishedAt?: string;
 };
 
 export const BatchManager: React.FC = () => {
-  const [mode, setMode] = useState<'upload' | 'schedule'>('upload');
+  const [mode, setMode] = useState<'upload' | 'schedule'>('schedule');
+  const [channels, setChannels] = useState<any[]>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<string>('');
   const [tasks, setTasks] = useState<BatchTask[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -34,51 +40,95 @@ export const BatchManager: React.FC = () => {
   const [batchId, setBatchId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const AppLayer = useMemo(() => Layer.mergeAll(YouTubeServiceLive, LoggerServiceLive, PocketBaseServiceLive), []);
+  const { appLayer } = useTenant();
+
+  // --- FETCH CHANNELS ---
+  useEffect(() => {
+    if (!appLayer) return;
+    const fetchChannels = Effect.gen(function* (_) {
+      const pbService = yield* _(PocketBaseService);
+      const list = yield* _(pbService.getChannels());
+      const activeChannels = list.filter(c => c.status === 'active');
+      setChannels(activeChannels);
+      if (activeChannels.length > 0 && !selectedChannelId) {
+        setSelectedChannelId(activeChannels[0].id);
+      }
+    });
+    Effect.runPromise(Effect.provide(fetchChannels, appLayer));
+  }, [appLayer]);
 
   // --- INITIALIZATION (Load from PocketBase) ---
   useEffect(() => {
+    if (!selectedChannelId || !appLayer) return;
+    
     const init = Effect.gen(function* (_) {
       const pbService = yield* _(PocketBaseService);
       
-      // For this demo, we use a fixed channel ID
-      const channelId = 'channel-default';
-      
       let currentBatch;
       try {
-        currentBatch = yield* _(pbService.getPendingBatch(channelId));
+        currentBatch = yield* _(pbService.getPendingBatch(selectedChannelId));
       } catch (e) {
-        currentBatch = yield* _(pbService.createBatch(channelId));
+        currentBatch = yield* _(pbService.createBatch(selectedChannelId));
       }
       
       setBatchId(currentBatch.id);
       
       const stagedVideos = yield* _(pbService.getStagedVideos(currentBatch.id));
-      const loadedTasks: BatchTask[] = stagedVideos.map(sv => ({
-        id: uuidv4(),
-        pbId: sv.id,
-        status: sv.status,
-        metadata: {
-          title: sv.title,
-          description: sv.description_brotli_b64, // In a real app we'd decompress, but for now we store raw or b64
-          privacyStatus: sv.privacyStatus,
-          license: sv.license || 'youtube',
-          embeddable: sv.embeddable,
-          publicStatsViewable: sv.publicStatsViewable,
-          madeForKids: sv.madeForKids,
-          containsSyntheticMedia: false,
-          paidProductPlacement: false,
-          tags: sv.tags || [],
-          categoryId: sv.categoryId || '22',
-          subDetails: {},
-          thumbnailUrl: Option.none(),
-          scheduledStartTime: sv.scheduledStartTime ? Option.some(sv.scheduledStartTime) : Option.none(),
-          publishAt: Option.none(),
-          recordingDate: Option.none(),
-          language: Option.some('en'),
-          localizations: Option.none(),
-        },
-      }));
+      const loadedTasks: BatchTask[] = [];
+
+      for (const sv of stagedVideos) {
+        let description = sv.description_brotli_b64 || '';
+        if (description) {
+          try {
+            description = yield* _(decompressFromBrotliB64(description));
+          } catch (e) {
+            const logger = yield* _(LoggerService);
+            yield* _(logger.error(`Failed to decompress description for ${sv.title}`, {}, e));
+          }
+        }
+
+        loadedTasks.push({
+          id: uuidv4(),
+          pbId: sv.id,
+          status: sv.status,
+          created: sv.created,
+          finishedAt: sv.finished_at,
+          error: sv.error_message,
+          metadata: {
+            title: sv.title,
+            description,
+            privacyStatus: sv.privacyStatus,
+            license: sv.license || 'youtube',
+            embeddable: sv.embeddable,
+            publicStatsViewable: sv.publicStatsViewable,
+            madeForKids: sv.madeForKids,
+            containsSyntheticMedia: false,
+            paidProductPlacement: false,
+            tags: sv.tags || [],
+            categoryId: sv.categoryId || '22',
+            subDetails: {},
+            thumbnailUrl: Option.none(),
+            scheduledStartTime: sv.scheduledStartTime ? Option.some(sv.scheduledStartTime) : Option.none(),
+            scheduledEndTime: sv.scheduledEndTime ? Option.some(sv.scheduledEndTime) : Option.none(),
+            publishAt: Option.none(),
+            recordingDate: Option.none(),
+            language: sv.language ? Option.some(sv.language) : Option.some('en'),
+            defaultLanguage: sv.defaultLanguage ? Option.some(sv.defaultLanguage) : Option.none(),
+            defaultAudioLanguage: sv.defaultAudioLanguage ? Option.some(sv.defaultAudioLanguage) : Option.none(),
+            latencyPreference: sv.latencyPreference ? Option.some(sv.latencyPreference) : Option.some('normal'),
+            enableAutoStart: sv.enableAutoStart ? Option.some(sv.enableAutoStart) : Option.some(false),
+            enableAutoStop: sv.enableAutoStop ? Option.some(sv.enableAutoStop) : Option.some(false),
+            enableDvr: sv.enableDvr ? Option.some(sv.enableDvr) : Option.some(true),
+            enableContentEncryption: sv.enableContentEncryption ? Option.some(sv.enableContentEncryption) : Option.some(false),
+            startWithLowLatency: sv.startWithLowLatency ? Option.some(sv.startWithLowLatency) : Option.some(false),
+            recordFromStart: sv.recordFromStart ? Option.some(sv.recordFromStart) : Option.some(true),
+            enableMonitorStream: sv.enableMonitorStream ? Option.some(sv.enableMonitorStream) : Option.some(true),
+            broadcastStreamDelayMs: sv.broadcastStreamDelayMs ? Option.some(sv.broadcastStreamDelayMs) : Option.some(0),
+            projection: sv.projection ? Option.some(sv.projection) : Option.some('rectangular'),
+            localizations: Option.none(),
+          },
+        });
+      }
       
       setTasks(loadedTasks);
 
@@ -86,31 +136,40 @@ export const BatchManager: React.FC = () => {
       const unlisten = yield* _(service.onJobCompleted((response) => {
         Effect.runSync(
           logInfo('Job completed from backend', { videoId: response.video_id }).pipe(
-            Effect.provide(AppLayer)
+            Effect.provide(appLayer)
           )
         );
       }));
       return unlisten;
     });
 
-    const cleanupPromise = Effect.runPromise(Effect.provide(init, AppLayer));
+    const cleanupPromise = Effect.runPromise(Effect.provide(init, appLayer));
     
     return () => {
       cleanupPromise.then(unlisten => unlisten?.());
     };
-  }, [AppLayer]);
+  }, [appLayer, selectedChannelId]);
 
   // --- PERSISTENCE HELPERS ---
   const persistTask = async (task: BatchTask, index: number) => {
     if (!batchId) return;
     const program = Effect.gen(function* (_) {
       const pbService = yield* _(PocketBaseService);
+      const logger = yield* _(LoggerService);
+
+      let compressedDesc = task.metadata.description;
+      try {
+        compressedDesc = yield* _(compressToBrotliB64(compressedDesc));
+      } catch (e) {
+        yield* _(logger.error("Compression failed in persistTask", {}, e));
+      }
+
       const record = {
         id: task.pbId,
         batch_id: batchId,
         status: task.status,
         title: task.metadata.title,
-        description_brotli_b64: task.metadata.description,
+        description_brotli_b64: compressedDesc,
         privacyStatus: task.metadata.privacyStatus,
         license: task.metadata.license,
         embeddable: task.metadata.embeddable,
@@ -119,21 +178,39 @@ export const BatchManager: React.FC = () => {
         tags: task.metadata.tags,
         categoryId: task.metadata.categoryId,
         scheduledStartTime: Option.getOrNull(task.metadata.scheduledStartTime),
+        scheduledEndTime: Option.getOrNull(task.metadata.scheduledEndTime),
+        publishAt: Option.getOrNull(task.metadata.publishAt),
+        recordingDate: Option.getOrNull(task.metadata.recordingDate),
+        language: Option.getOrNull(task.metadata.language),
+        defaultLanguage: Option.getOrNull(task.metadata.defaultLanguage),
+        defaultAudioLanguage: Option.getOrNull(task.metadata.defaultAudioLanguage),
+        latencyPreference: Option.getOrNull(task.metadata.latencyPreference),
+        enableAutoStart: Option.getOrNull(task.metadata.enableAutoStart),
+        enableAutoStop: Option.getOrNull(task.metadata.enableAutoStop),
+        enableDvr: Option.getOrNull(task.metadata.enableDvr),
+        enableContentEncryption: Option.getOrNull(task.metadata.enableContentEncryption),
+        startWithLowLatency: Option.getOrNull(task.metadata.startWithLowLatency),
+        recordFromStart: Option.getOrNull(task.metadata.recordFromStart),
+        enableMonitorStream: Option.getOrNull(task.metadata.enableMonitorStream),
+        broadcastStreamDelayMs: Option.getOrNull(task.metadata.broadcastStreamDelayMs),
+        projection: Option.getOrNull(task.metadata.projection),
         sort_order: index,
+        error_message: task.error,
+        finished_at: task.finishedAt,
       };
       const saved = yield* _(pbService.saveStagedVideo(record));
       return saved.id;
     });
     
-    const pbId = await Effect.runPromise(Effect.provide(program, AppLayer));
+    const pbId = await Effect.runPromise(Effect.provide(program, appLayer));
     if (!task.pbId) {
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, pbId } : t));
     }
   };
 
-  const createDefaultMetadata = (fileName: string, scheduleOffsetDays: number): typeof VideoMetadataSchema.Type => ({
-    title: fileName.split('.')[0] || 'Untitled Video',
-    description: 'Auto-staged via YouTube Upload Manager',
+  const createDefaultMetadata = (title: string, scheduleOffsetDays: number): typeof VideoMetadataSchema.Type => ({
+    title,
+    description: 'Bulk staged via YouTube Manager',
     privacyStatus: 'private',
     license: 'youtube',
     embeddable: true,
@@ -141,23 +218,63 @@ export const BatchManager: React.FC = () => {
     madeForKids: false,
     containsSyntheticMedia: false,
     paidProductPlacement: false,
-    tags: ['staged'],
+    tags: ['bulk-staged'],
     categoryId: '22',
     subDetails: {},
     thumbnailUrl: Option.none(),
     scheduledStartTime: mode === 'schedule' ? Option.some(new Date(Date.now() + 86400000 * scheduleOffsetDays).toISOString()) : Option.none(),
+    scheduledEndTime: Option.none(),
     publishAt: Option.none(),
     recordingDate: Option.none(),
     language: Option.some('en'),
+    defaultLanguage: Option.none(),
+    defaultAudioLanguage: Option.none(),
+    latencyPreference: Option.some('normal'),
+    enableAutoStart: Option.some(false),
+    enableAutoStop: Option.some(false),
+    enableDvr: Option.some(true),
+    enableContentEncryption: Option.some(false),
+    startWithLowLatency: Option.some(false),
+    recordFromStart: Option.some(true),
+    enableMonitorStream: Option.some(true),
+    broadcastStreamDelayMs: Option.some(0),
+    projection: Option.some('rectangular'),
     localizations: Option.none(),
   });
+
+  const handleAddStreamPlaceholders = () => {
+    const count = parseInt(prompt("How many stream placeholders do you want to create?", "1") || "0", 10);
+    if (isNaN(count) || count <= 0) return;
+
+    const baseTitle = prompt("Base title for these streams?", "Live Broadcast") || "Live Broadcast";
+    const intervalMinutes = parseInt(prompt("Interval between streams (minutes)?", "60") || "60", 10);
+
+    const startIndex = tasks.length;
+    const baseDate = new Date();
+    baseDate.setMinutes(baseDate.getMinutes() + 30); // Start 30 mins from now
+
+    const newTasks: BatchTask[] = Array.from({ length: count }).map((_, i) => {
+      const scheduledStartTime = new Date(baseDate.getTime() + (i * intervalMinutes * 60000)).toISOString();
+      const task: BatchTask = {
+        id: uuidv4(),
+        metadata: {
+          ...createDefaultMetadata(`${baseTitle} #${startIndex + i + 1}`, 0),
+          scheduledStartTime: Option.some(scheduledStartTime),
+        },
+        status: 'idle',
+      };
+      persistTask(task, startIndex + i);
+      return task;
+    });
+    setTasks(prev => [...prev, ...newTasks]);
+  };
 
   const handleFiles = (files: FileList) => {
     const startIndex = tasks.length;
     const newTasks: BatchTask[] = Array.from(files).map((file, i) => {
       const task: BatchTask = {
         id: uuidv4(),
-        metadata: createDefaultMetadata(file.name, startIndex + i + 1),
+        metadata: createDefaultMetadata(file.name.split('.')[0], startIndex + i + 1),
         file,
         status: 'idle',
       };
@@ -223,27 +340,45 @@ export const BatchManager: React.FC = () => {
   };
 
   const handleRunBatch = async (taskIds?: string[]) => {
+    if (!selectedChannelId || !appLayer) {
+      alert("Please select an active channel first.");
+      return;
+    }
+
     setIsProcessing(true);
     setEditingId(null); // Close any open editors
-    const targetTasks = tasks.filter(t => taskIds ? taskIds.includes(t.id) : (t.status === 'idle' || t.status === 'error'));
     
+    // 1. Identify tasks to process
+    let targetTasks = tasks.filter(t => taskIds ? taskIds.includes(t.id) : (t.status === 'idle' || t.status === 'error'));
+    
+    // 2. Sort if in schedule mode (Order matters for stream setup)
+    if (mode === 'schedule') {
+      targetTasks = [...targetTasks].sort((a, b) => {
+        const timeA = Option.getOrNull(a.metadata.scheduledStartTime);
+        const timeB = Option.getOrNull(b.metadata.scheduledStartTime);
+        if (!timeA) return 1;
+        if (!timeB) return -1;
+        return new Date(timeA).getTime() - new Date(timeB).getTime();
+      });
+    }
+
     setTasks(prev => prev.map(t => targetTasks.find(tt => tt.id === t.id) ? { ...t, status: 'processing', error: undefined } : t));
 
     for (const task of targetTasks) {
-      if (!task.file) {
+      if (!task.file && mode === 'upload') {
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'error', error: 'Video file missing (transient memory lost)' } : t));
         continue;
       }
 
       const batch = {
-        channelId: 'channel-default',
+        channelId: selectedChannelId,
         videos: [task.metadata]
       };
       
-      const program = processBatch(batch, [task.file], [task.thumbnailFile], mode);
+      const program = processBatch(batch, task.file ? [task.file] : [], [task.thumbnailFile], mode);
 
       try {
-        const result = await Effect.runPromise(Effect.provide(program, AppLayer));
+        const result = await Effect.runPromise(Effect.provide(program, appLayer));
         const videoIdArray = Array.from(result as any) as string[];
         const videoId = videoIdArray[0];
 
@@ -251,16 +386,17 @@ export const BatchManager: React.FC = () => {
         const detailsProgram = YouTubeService.pipe(
           Effect.flatMap(service => service.getVideoDetails(videoId))
         );
-        const details = await Effect.runPromise(Effect.provide(detailsProgram, AppLayer));
+        const details = await Effect.runPromise(Effect.provide(detailsProgram, appLayer));
 
-        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'success', youtubeDetails: details } : t));
+        const finishedAt = new Date().toISOString();
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'success', youtubeDetails: details, finishedAt } : t));
         
         // Update PB status
-        persistTask({ ...task, status: 'success' }, tasks.findIndex(t => t.id === task.id));
+        persistTask({ ...task, status: 'success', finishedAt }, tasks.findIndex(t => t.id === task.id));
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'error', error: msg } : t));
-        persistTask({ ...task, status: 'error' }, tasks.findIndex(t => t.id === task.id));
+        persistTask({ ...task, status: 'error', error: msg }, tasks.findIndex(t => t.id === task.id));
       }
     }
     setIsProcessing(false);
@@ -282,20 +418,33 @@ export const BatchManager: React.FC = () => {
               <RefreshCw className={isProcessing ? 'animate-spin text-blue-600' : 'text-slate-400 dark:text-slate-500'} size={24} />
               Batch Control Center
             </h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Stage, reorder, and edit your bulk uploads</p>
+            <div className="flex items-center gap-4 mt-2">
+              <p className="text-slate-500 dark:text-slate-400 text-sm">Target Channel:</p>
+              <select 
+                value={selectedChannelId} 
+                onChange={(e) => setSelectedChannelId(e.target.value)}
+                disabled={isProcessing}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {channels.length === 0 && <option value="">No Active Channels</option>}
+                {channels.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.handle})</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-full md:w-auto">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full md:w-auto shadow-inner">
             <button 
               disabled={isProcessing}
               onClick={() => setMode('upload')}
-              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-md text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
+              className={`flex-1 md:flex-none px-8 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all duration-300 ${mode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-xl text-blue-600 dark:text-blue-400 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
             >
-              Uploads
+              General Uploads
             </button>
             <button 
               disabled={isProcessing}
               onClick={() => setMode('schedule')}
-              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${mode === 'schedule' ? 'bg-white dark:bg-slate-700 shadow-md text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
+              className={`flex-1 md:flex-none px-8 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all duration-300 ${mode === 'schedule' ? 'bg-white dark:bg-slate-700 shadow-xl text-indigo-600 dark:text-indigo-400 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
             >
               Live Streams
             </button>
@@ -325,6 +474,14 @@ export const BatchManager: React.FC = () => {
           </div>
           <h3 className="font-bold text-slate-900 dark:text-white mb-1">Click or drag videos to stage</h3>
           <p className="text-slate-500 dark:text-slate-400 text-sm">Videos will be uploaded in the order shown below.</p>
+          {mode === 'schedule' && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); handleAddStreamPlaceholders(); }}
+              className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold text-sm transition-all"
+            >
+              Or Bulk Create Stream Placeholders
+            </button>
+          )}
         </div>
 
         {tasks.length > 0 && (
@@ -394,6 +551,7 @@ export const BatchManager: React.FC = () => {
                                   <p className="font-bold text-slate-900 dark:text-white leading-tight">{task.metadata.title}</p>
                                   <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
                                     {task.metadata.privacyStatus.toUpperCase()} • {Option.getOrNull(task.metadata.scheduledStartTime) ? new Date(Option.getOrNull(task.metadata.scheduledStartTime)!).toLocaleString() : 'Immediate'}
+                                    {task.created && ` • Staged ${new Date(task.created).toLocaleDateString()}`}
                                   </p>
                                 </div>
                               </div>
@@ -433,7 +591,7 @@ export const BatchManager: React.FC = () => {
                             )}
                           </td>
                           <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
-                            {(task.file.size / (1024 * 1024)).toFixed(1)} MB
+                            {task.file ? `${(task.file.size / (1024 * 1024)).toFixed(1)} MB` : '--'}
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex justify-end items-center gap-1">
@@ -467,67 +625,111 @@ export const BatchManager: React.FC = () => {
                         {/* Inline Editor */}
                         {editingId === task.id && (
                           <tr>
-                            <td colSpan={6} className="px-8 py-6 bg-blue-50/50 dark:bg-blue-900/5 border-x-2 border-blue-500/20">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                  <div>
-                                    <label htmlFor={`title-${task.id}`} className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">Video Title</label>
-                                    <input 
-                                      id={`title-${task.id}`}
-                                      type="text" 
-                                      value={task.metadata.title}
-                                      onChange={(e) => updateTaskMetadata(task.id, { title: e.target.value })}
-                                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label htmlFor={`desc-${task.id}`} className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">Description</label>
-                                    <textarea 
-                                      id={`desc-${task.id}`}
-                                      value={task.metadata.description}
-                                      onChange={(e) => updateTaskMetadata(task.id, { description: e.target.value })}
-                                      rows={3}
-                                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
-                                    />
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label htmlFor={`privacy-${task.id}`} className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">Privacy</label>
-                                      <select 
-                                        id={`privacy-${task.id}`}
-                                        value={task.metadata.privacyStatus}
-                                        onChange={(e) => updateTaskMetadata(task.id, { privacyStatus: e.target.value as any })}
-                                        className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none"
-                                      >
-                                        <option value="private">Private</option>
-                                        <option value="unlisted">Unlisted</option>
-                                        <option value="public">Public</option>
-                                      </select>
+                            <td colSpan={6} className="px-8 py-8 bg-slate-50/50 dark:bg-slate-900/50 border-x-2 border-indigo-500/20">
+                              <div className="max-w-5xl mx-auto space-y-10">
+                                {/* SECTION 1: Snippet & Identity */}
+                                <div>
+                                  <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                                      <Edit3 size={16} />
                                     </div>
-                                    <div>
-                                      <label htmlFor={`schedule-${task.id}`} className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">Schedule Date/Time</label>
-                                      <input 
-                                        id={`schedule-${task.id}`}
-                                        type="datetime-local" 
-                                        value={Option.getOrNull(task.metadata.scheduledStartTime)?.slice(0, 16) || ''}
-                                        onChange={(e) => updateTaskMetadata(task.id, { scheduledStartTime: e.target.value ? Option.some(new Date(e.target.value).toISOString()) : Option.none() })}
-                                        className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none"
-                                      />
+                                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Content Snippet</h4>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="space-y-6">
+                                      <div>
+                                        <label htmlFor={`title-${task.id}`} className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Video Title</label>
+                                        <input 
+                                          id={`title-${task.id}`}
+                                          type="text" 
+                                          value={task.metadata.title}
+                                          onChange={(e) => updateTaskMetadata(task.id, { title: e.target.value })}
+                                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label htmlFor={`desc-${task.id}`} className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Description</label>
+                                        <textarea 
+                                          id={`desc-${task.id}`}
+                                          value={task.metadata.description}
+                                          onChange={(e) => updateTaskMetadata(task.id, { description: e.target.value })}
+                                          rows={5}
+                                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none shadow-sm"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Privacy Status</label>
+                                          <select 
+                                            value={task.metadata.privacyStatus}
+                                            onChange={(e) => updateTaskMetadata(task.id, { privacyStatus: e.target.value as any })}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                          >
+                                            <option value="private">Private</option>
+                                            <option value="unlisted">Unlisted</option>
+                                            <option value="public">Public</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Category ID</label>
+                                          <input 
+                                            type="text" 
+                                            value={task.metadata.categoryId}
+                                            onChange={(e) => updateTaskMetadata(task.id, { categoryId: e.target.value })}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                            placeholder="22 (Blogs)"
+                                          />
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Schedule Start</label>
+                                          <input 
+                                            type="datetime-local" 
+                                            value={Option.getOrNull(task.metadata.scheduledStartTime)?.slice(0, 16) || ''}
+                                            onChange={(e) => updateTaskMetadata(task.id, { scheduledStartTime: e.target.value ? Option.some(new Date(e.target.value).toISOString()) : Option.none() })}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Schedule End</label>
+                                          <input 
+                                            type="datetime-local" 
+                                            value={Option.getOrNull(task.metadata.scheduledEndTime)?.slice(0, 16) || ''}
+                                            onChange={(e) => updateTaskMetadata(task.id, { scheduledEndTime: e.target.value ? Option.some(new Date(e.target.value).toISOString()) : Option.none() })}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                          />
+                                        </div>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
-                                <div className="space-y-4">
+
+                                {/* SECTION 2: Media & Metadata */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                                   <div>
-                                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">Thumbnail Override</label>
-                                    <div className="flex items-start gap-4">
-                                      <div className="w-40 aspect-video bg-slate-100 dark:bg-slate-800 rounded-lg border-2 border-dashed border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center relative group">
+                                    <div className="flex items-center gap-3 mb-6">
+                                      <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                        <ImageIcon size={16} />
+                                      </div>
+                                      <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Media Assets</h4>
+                                    </div>
+                                    <div className="flex items-start gap-6">
+                                      <div className="w-48 aspect-video bg-white dark:bg-slate-800 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 overflow-hidden flex items-center justify-center relative group shadow-sm">
                                         {task.thumbnailFile ? (
                                           <img src={URL.createObjectURL(task.thumbnailFile)} alt="Thumb" className="w-full h-full object-cover" />
                                         ) : (
-                                          <ImageIcon className="text-slate-300 dark:text-slate-600" size={32} />
+                                          <div className="flex flex-col items-center gap-2">
+                                            <ImageIcon className="text-slate-300" size={32} />
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No Thumbnail</span>
+                                          </div>
                                         )}
-                                        <label className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer text-white font-bold text-[10px] uppercase tracking-widest">
-                                          Change
+                                        <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer text-white font-black text-[10px] uppercase tracking-widest">
+                                          Update Asset
                                           <input 
                                             type="file" 
                                             accept="image/*" 
@@ -536,27 +738,157 @@ export const BatchManager: React.FC = () => {
                                           />
                                         </label>
                                       </div>
-                                      <div className="flex-1">
-                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">Upload a custom thumbnail for this video. Recommended: 1280x720, &lt;2MB.</p>
-                                        {task.thumbnailFile && (
-                                          <button 
-                                            onClick={() => handleThumbnailChange(task.id, undefined)}
-                                            className="text-red-600 dark:text-red-400 text-[10px] font-bold uppercase tracking-widest hover:underline"
-                                          >
-                                            Remove Thumbnail
-                                          </button>
-                                        )}
+                                      <div className="flex-1 space-y-4">
+                                        <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">Custom thumbnails improve click-through by 40%. Recommended: 1280x720 (16:9), &lt;2MB.</p>
+                                        <div className="flex flex-wrap gap-2">
+                                          <button className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-200 transition-all">Clear</button>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="pt-4 flex justify-end gap-3">
-                                    <button 
-                                      onClick={() => setEditingId(null)}
-                                      className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                                    >
-                                      Done Editing
-                                    </button>
+
+                                  <div>
+                                    <div className="flex items-center gap-3 mb-6">
+                                      <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                                        <RefreshCw size={16} />
+                                      </div>
+                                      <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Localization & Lang</h4>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Default Language</label>
+                                        <select 
+                                          value={Option.getOrNull(task.metadata.language) || 'en'}
+                                          onChange={(e) => updateTaskMetadata(task.id, { language: Option.some(e.target.value) })}
+                                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                        >
+                                          <option value="en">English (US)</option>
+                                          <option value="es">Spanish</option>
+                                          <option value="fr">French</option>
+                                          <option value="de">German</option>
+                                          <option value="ja">Japanese</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Audio Language</label>
+                                        <select 
+                                          value={Option.getOrNull(task.metadata.defaultAudioLanguage) || 'en'}
+                                          onChange={(e) => updateTaskMetadata(task.id, { defaultAudioLanguage: Option.some(e.target.value) })}
+                                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                        >
+                                          <option value="en">English (US)</option>
+                                          <option value="es">Spanish</option>
+                                        </select>
+                                      </div>
+                                    </div>
                                   </div>
+                                </div>
+
+                                {/* SECTION 3: Stream/Broadcast Infrastructure */}
+                                {mode === 'schedule' && (
+                                  <div>
+                                    <div className="flex items-center gap-3 mb-6">
+                                      <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                                        <Play size={16} />
+                                      </div>
+                                      <h4 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Broadcast Infrastructure</h4>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                                      <div className="col-span-2 space-y-6">
+                                        <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Latency Preference</label>
+                                            <select 
+                                              value={Option.getOrNull(task.metadata.latencyPreference) || 'normal'}
+                                              onChange={(e) => updateTaskMetadata(task.id, { latencyPreference: Option.some(e.target.value as any) })}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                            >
+                                              <option value="normal">Normal (Best Quality)</option>
+                                              <option value="low">Low Latency</option>
+                                              <option value="ultraLow">Ultra Low (Real-time)</option>
+                                            </select>
+                                          </div>
+                                          <div>
+                                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Projection</label>
+                                            <select 
+                                              value={Option.getOrNull(task.metadata.projection) || 'rectangular'}
+                                              onChange={(e) => updateTaskMetadata(task.id, { projection: Option.some(e.target.value as any) })}
+                                              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                            >
+                                              <option value="rectangular">Rectangular (Std)</option>
+                                              <option value="360">360° Spherical</option>
+                                            </select>
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Monitor Stream Delay (ms)</label>
+                                          <input 
+                                            type="number" 
+                                            value={Option.getOrElse(task.metadata.broadcastStreamDelayMs, () => 0)}
+                                            onChange={(e) => updateTaskMetadata(task.id, { broadcastStreamDelayMs: Option.some(parseInt(e.target.value, 10)) })}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        {[
+                                          { key: 'enableDvr', label: 'Enable DVR', desc: 'Rewind live' },
+                                          { key: 'enableAutoStart', label: 'Auto-Start', desc: 'Immediate live' },
+                                          { key: 'enableAutoStop', label: 'Auto-Stop', desc: 'Sync end' },
+                                        ].map(opt => (
+                                          <label key={opt.key} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white dark:hover:bg-slate-800 transition-all cursor-pointer group border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                                            <input 
+                                              type="checkbox" 
+                                              className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                              checked={Option.getOrElse((task.metadata as any)[opt.key], () => false)} 
+                                              onChange={(e) => updateTaskMetadata(task.id, { [opt.key]: Option.some(e.target.checked) })}
+                                            />
+                                            <div className="flex flex-col">
+                                              <span className="text-[11px] font-black uppercase tracking-tight text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 transition-colors">{opt.label}</span>
+                                              <span className="text-[9px] text-slate-400 dark:text-slate-500">{opt.desc}</span>
+                                            </div>
+                                          </label>
+                                        ))}
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        {[
+                                          { key: 'recordFromStart', label: 'Record', desc: 'Archive stream' },
+                                          { key: 'enableMonitorStream', label: 'Monitor', desc: 'Private preview' },
+                                          { key: 'enableContentEncryption', label: 'Encrypt', desc: 'Secure flow' },
+                                        ].map(opt => (
+                                          <label key={opt.key} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white dark:hover:bg-slate-800 transition-all cursor-pointer group border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                                            <input 
+                                              type="checkbox" 
+                                              className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                              checked={Option.getOrElse((task.metadata as any)[opt.key], () => false)} 
+                                              onChange={(e) => updateTaskMetadata(task.id, { [opt.key]: Option.some(e.target.checked) })}
+                                            />
+                                            <div className="flex flex-col">
+                                              <span className="text-[11px] font-black uppercase tracking-tight text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 transition-colors">{opt.label}</span>
+                                              <span className="text-[9px] text-slate-400 dark:text-slate-500">{opt.desc}</span>
+                                            </div>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* ACTION FOOTER */}
+                                <div className="pt-8 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                                  <div className="flex items-center gap-2 text-slate-400 text-xs italic">
+                                    <AlertTriangle size={12} />
+                                    Changes are auto-saved to local staging
+                                  </div>
+                                  <button 
+                                    onClick={() => setEditingId(null)}
+                                    className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-slate-200 dark:shadow-none"
+                                  >
+                                    Commit Configuration
+                                  </button>
                                 </div>
                               </div>
                             </td>

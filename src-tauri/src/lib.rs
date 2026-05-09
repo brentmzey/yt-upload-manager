@@ -68,10 +68,24 @@ pub struct VideoMetadataPayload {
     pub thumbnail_data_b64: Option<String>,
     pub scheduled_start_time: Option<String>,
     pub scheduled_start_time_millis: Option<u64>,
+    pub scheduled_end_time: Option<String>,
     pub publish_at: Option<String>,
     pub recording_date: Option<String>,
     pub language: Option<String>,
+    pub default_language: Option<String>,
+    pub default_audio_language: Option<String>,
+    pub latency_preference: Option<String>,
+    pub enable_auto_start: Option<bool>,
+    pub enable_auto_stop: Option<bool>,
+    pub enable_dvr: Option<bool>,
+    pub enable_content_encryption: Option<bool>,
+    pub start_with_low_latency: Option<bool>,
+    pub record_from_start: Option<bool>,
+    pub enable_monitor_stream: Option<bool>,
+    pub broadcast_stream_delay_ms: Option<u32>,
+    pub projection: Option<String>,
     pub is_compressed: Option<bool>,
+    pub compressed_fields: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, TS, Debug, Clone)]
@@ -132,14 +146,15 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
         let is_scheduling = payload.scheduled_start_time.is_some() || payload.scheduled_start_time_millis.is_some();
         let job_type = if is_scheduling { "Scheduling" } else { "Upload" };
         
-        // --- HUMAN READABLE LOGGING REGARDLESS OF COMPRESSION ---
-        let _display_desc = if payload.is_compressed.unwrap_or(false) {
+        // --- HUMAN READABLE LOGGING USING HINTS ---
+        let display_desc = if payload.compressed_fields.contains(&"description".to_string()) || payload.is_compressed.unwrap_or(false) {
             decompress_brotli_b64(&payload.description).unwrap_or_else(|e| format!("[Decompression Failed: {:?}]", e))
         } else {
             payload.description.clone()
         };
 
-        info!("Rust Worker: Starting {} job for {}", job_type, payload.title);
+        info!("Rust Worker: Starting {} job for {} (Desc Length: {} chars)", job_type, payload.title, display_desc.len());
+        trace!("Decompressed Description: {}", display_desc);
         
         // Simulate long-running task
         let job_active_jobs = Arc::clone(&active_jobs);
@@ -354,10 +369,24 @@ mod tests {
             thumbnail_data_b64: Some("mYgDAOR0ZXN0".to_string()), // Mock base64
             scheduled_start_time: None,
             scheduled_start_time_millis: Some(1714687200000), // May 2, 2024
+            scheduled_end_time: None,
             publish_at: None,
             recording_date: None,
             language: None,
+            default_language: None,
+            default_audio_language: None,
+            latency_preference: None,
+            enable_auto_start: None,
+            enable_auto_stop: None,
+            enable_dvr: None,
+            enable_content_encryption: None,
+            start_with_low_latency: None,
+            record_from_start: None,
+            enable_monitor_stream: None,
+            broadcast_stream_delay_ms: None,
+            projection: None,
             is_compressed: None,
+            compressed_fields: vec![],
         };
 
         let result = commands::start_youtube_upload_job(payload, state).await;

@@ -1,8 +1,9 @@
 import PocketBase from 'pocketbase';
 
-const PB_URL = process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
+const PB_URL = process.env.POCKETBASE_URL || process.env.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090';
 const PB_ADMIN_EMAIL = process.env.PB_ADMIN_EMAIL || 'admin@yt-manager.com';
 const PB_ADMIN_PASSWORD = process.env.PB_ADMIN_PASSWORD || 'admin123456';
+const TENANT_ID = process.env.TENANT_ID; // Passed from Registry during sync
 
 const pb = new PocketBase(PB_URL);
 
@@ -53,11 +54,11 @@ async function ensureAdmin() {
 
 async function ensureMigrationsCollection() {
   try {
-    await pb.collections.getOne('internal_migrations');
+    await pb.collections.getOne('s_internal_migrations');
   } catch {
-    console.log('✨ Creating internal_migrations collection...');
+    console.log('✨ Creating s_internal_migrations collection...');
     await pb.collections.create({
-      name: 'internal_migrations',
+      name: 's_internal_migrations',
       type: 'base',
       fields: [
         { name: 'migration_id', type: 'text', required: true, nullable: false },
@@ -69,7 +70,7 @@ async function ensureMigrationsCollection() {
 
 async function isApplied(id: string): Promise<boolean> {
   try {
-    await pb.collection('internal_migrations').getFirstListItem(`migration_id="${id}"`);
+    await pb.collection('s_internal_migrations').getFirstListItem(`migration_id="${id}"`);
     return true;
   } catch {
     return false;
@@ -77,7 +78,7 @@ async function isApplied(id: string): Promise<boolean> {
 }
 
 async function markApplied(id: string, description: string) {
-  await pb.collection('internal_migrations').create({
+  await pb.collection('s_internal_migrations').create({
     migration_id: id,
     description: description,
   });
@@ -88,105 +89,289 @@ async function markApplied(id: string, description: string) {
  */
 const migrations: MigrationStep[] = [
   {
-    id: '2026-04-24-001-init-channels',
-    description: 'Create initial channels collection',
+    id: '2026-05-04-001-init-tenant-identity',
+    description: 'Ensure tenant identity and cross-registry mapping',
     run: async (pb) => {
+      try {
+        await pb.collections.getOne('s_tenant_identity');
+      } catch {
+        await pb.collections.create({
+          name: 's_tenant_identity',
+          type: 'base',
+          fields: [
+            { name: 'tenant_id', type: 'text', required: true, system: false },
+            { name: 'registered_name', type: 'text' },
+          ],
+        });
+      }
+
+      if (TENANT_ID) {
+        try {
+          const list = await pb.collection('s_tenant_identity').getFullList();
+          if (list.length > 0) {
+            await pb.collection('s_tenant_identity').update(list[0].id, { tenant_id: TENANT_ID });
+          } else {
+            await pb.collection('s_tenant_identity').create({ tenant_id: TENANT_ID });
+          }
+          console.log(`🆔 Identity aligned with Registry ID: ${TENANT_ID}`);
+        } catch (e) {
+          console.error(`⚠️ Failed to set tenant identity: ${e}`);
+        }
+      }
+    }
+  },
+  {
+    id: '2026-05-03-001-init-system-channels',
+    description: 'Create system channels collection (s_channels)',
+    run: async (pb) => {
+      try {
+        const existing = await pb.collections.getOne('s_channels');
+        existing.listRule = "";
+        existing.viewRule = "";
+        existing.createRule = "";
+        existing.updateRule = "";
+        existing.deleteRule = "";
+        await pb.collections.update(existing.id, existing);
+        return;
+      } catch {}
+
       await pb.collections.create({
-        name: 'channels',
+        name: 's_channels',
         type: 'base',
+        system: false,
+        listRule: "",
+        viewRule: "",
+        createRule: "",
+        updateRule: "",
+        deleteRule: "",
         fields: [
-          { name: 'name', type: 'text', required: true },
-          { name: 'handle', type: 'text', required: true },
-          { name: 'status', type: 'select', values: ['active', 'expired', 'pending'] },
-          { name: 'youtube_config_brotli_b64', type: 'text', required: true },
+          { 
+            id: 'text3208210256', 
+            name: 'id', 
+            type: 'text', 
+            system: true, 
+            primaryKey: true, 
+            required: true, 
+            pattern: '^[a-z0-9]+$',
+            autogeneratePattern: '[a-z0-9]{15}' 
+          },
+          { id: 'text1579384326', name: 'name', type: 'text', required: true, system: false },
+          { id: 'text2441093337', name: 'handle', type: 'text', required: true, system: false },
+          { id: 'select2063623452', name: 'status', type: 'select', system: false, values: ['active', 'expired', 'pending'] },
+          { id: 'text2793693633', name: 'youtube_config_brotli_b64', type: 'text', required: true, system: false },
+          { id: 'text3018210257', name: 'last_error', type: 'text', system: false },
+          { id: 'date3018210258', name: 'last_sync_at', type: 'date', system: false },
+          { id: 'bool3018210261', name: 'is_archived', type: 'bool', system: false },
+          { id: 'text3018210262', name: 'notes', type: 'text', system: false },
+          { id: 'json3018210263', name: 'metadata_json', type: 'json', system: false },
         ],
         indexes: [
-          'CREATE UNIQUE INDEX idx_channels_handle ON channels (handle)',
+          'CREATE UNIQUE INDEX idx_s_channels_handle ON s_channels (handle)',
+          'CREATE INDEX idx_s_channels_archived ON s_channels (is_archived)',
         ],
       });
     }
   },
   {
-    id: '2026-04-24-002-init-batches',
-    description: 'Create initial batches collection',
+    id: '2026-05-03-002-init-system-batches',
+    description: 'Create system batches collection (s_batches)',
     run: async (pb) => {
+      try {
+        const existing = await pb.collections.getOne('s_batches');
+        existing.listRule = "";
+        existing.viewRule = "";
+        existing.createRule = "";
+        existing.updateRule = "";
+        existing.deleteRule = "";
+        await pb.collections.update(existing.id, existing);
+        return;
+      } catch {}
+      const channels = await pb.collections.getOne('s_channels');
       await pb.collections.create({
-        name: 'batches',
+        name: 's_batches',
         type: 'base',
+        system: false,
+        listRule: "",
+        viewRule: "",
+        createRule: "",
+        updateRule: "",
+        deleteRule: "",
         fields: [
-          { name: 'channel_id', type: 'relation', collectionId: 'channels', cascadeDelete: true },
-          { name: 'status', type: 'select', values: ['pending', 'processing', 'completed', 'failed'] },
-          { name: 'priority', type: 'number', required: true },
+          { 
+            id: 'text3208210256', 
+            name: 'id', 
+            type: 'text', 
+            system: true, 
+            primaryKey: true, 
+            required: true, 
+            pattern: '^[a-z0-9]+$',
+            autogeneratePattern: '[a-z0-9]{15}' 
+          },
+          { 
+            id: 'relation310459523',
+            name: 'channel_id', 
+            type: 'relation', 
+            required: true,
+            system: false,
+            collectionId: channels.id,
+            cascadeDelete: true,
+            maxSelect: 1,
+          },
+          { id: 'select2063623452', name: 'status', type: 'select', required: true, system: false, values: ['pending', 'processing', 'completed', 'failed'] },
+          { id: 'date2063623453', name: 'scheduled_for', type: 'date', system: false },
+          { id: 'bool3018210264', name: 'is_archived', type: 'bool', system: false },
+          { id: 'text3018210265', name: 'notes', type: 'text', system: false },
+          { id: 'json3018210266', name: 'metadata_json', type: 'json', system: false },
+        ],
+        indexes: [
+          'CREATE INDEX idx_s_batches_archived ON s_batches (is_archived)',
         ],
       });
     }
   },
   {
-    id: '2026-04-24-003-init-staged-videos',
-    description: 'Create staged_videos with Brotli fields',
+    id: '2026-05-03-003-init-system-staged-videos',
+    description: 'Create system staged_videos collection (s_staged_videos)',
     run: async (pb) => {
+      try {
+        const existing = await pb.collections.getOne('s_staged_videos');
+        existing.listRule = "";
+        existing.viewRule = "";
+        existing.createRule = "";
+        existing.updateRule = "";
+        existing.deleteRule = "";
+        await pb.collections.update(existing.id, existing);
+        return;
+      } catch {}
+      const batches = await pb.collections.getOne('s_batches');
       await pb.collections.create({
-        name: 'staged_videos',
+        name: 's_staged_videos',
         type: 'base',
+        system: false,
+        listRule: "",
+        viewRule: "",
+        createRule: "",
+        updateRule: "",
+        deleteRule: "",
         fields: [
-          { name: 'batch_id', type: 'relation', collectionId: 'batches', cascadeDelete: true },
-          { name: 'status', type: 'select', values: ['idle', 'processing', 'success', 'error'] },
-          { name: 'title', type: 'text', required: true },
-          { name: 'description_brotli_b64', type: 'text', required: true },
-          { name: 'subDetails_brotli_b64', type: 'text', required: true },
-          { name: 'privacyStatus', type: 'select', values: ['public', 'private', 'unlisted'] },
-          { name: 'categoryId', type: 'text', required: true },
+          { 
+            id: 'text3208210256', 
+            name: 'id', 
+            type: 'text', 
+            system: true, 
+            primaryKey: true, 
+            required: true, 
+            pattern: '^[a-z0-9]+$',
+            autogeneratePattern: '[a-z0-9]{15}' 
+          },
+          { 
+            id: 'relation310459523',
+            name: 'batch_id', 
+            type: 'relation', 
+            required: true,
+            system: false,
+            collectionId: batches.id,
+            cascadeDelete: true,
+            maxSelect: 1,
+          },
+          { 
+            id: 'select2063623452',
+            name: 'status', 
+            type: 'select', 
+            required: true,
+            system: false,
+            values: ['idle', 'processing', 'success', 'error']
+          },
+          { id: 'text1579384326', name: 'title', type: 'text', required: true, system: false },
+          { id: 'text1579384327', name: 'description_brotli_b64', type: 'text', system: false },
+          { 
+            id: 'select2063623454',
+            name: 'privacyStatus', 
+            type: 'select', 
+            required: true,
+            system: false,
+            values: ['public', 'private', 'unlisted']
+          },
+          { id: 'text1579384328', name: 'license', type: 'text', system: false },
+          { id: 'bool1579384329', name: 'embeddable', type: 'bool', system: false },
+          { id: 'bool1579384330', name: 'publicStatsViewable', type: 'bool', system: false },
+          { id: 'bool1579384331', name: 'madeForKids', type: 'bool', system: false },
+          { id: 'json1579384332', name: 'tags', type: 'json', system: false },
+          { id: 'text1579384333', name: 'categoryId', type: 'text', system: false },
+          { id: 'text1579384334', name: 'thumbnailUrl', type: 'text', system: false },
+          { id: 'date1579384335', name: 'scheduledStartTime', type: 'date', system: false },
+          { id: 'date1579384336', name: 'publishAt', type: 'date', system: false },
+          { id: 'date1579384337', name: 'recordingDate', type: 'date', system: false },
+          { id: 'text1579384338', name: 'language', type: 'text', system: false },
+          { id: 'number1579384339', name: 'sort_order', type: 'number', system: false },
+          { id: 'text3018210259', name: 'error_message', type: 'text', system: false },
+          { id: 'date3018210260', name: 'finished_at', type: 'date', system: false },
+          { id: 'select3018210267', name: 'latencyPreference', type: 'select', system: false, values: ['normal', 'low', 'ultraLow'] },
+          { id: 'bool3018210268', name: 'enableAutoStart', type: 'bool', system: false },
+          { id: 'bool3018210269', name: 'enableAutoStop', type: 'bool', system: false },
+          { id: 'bool3018210270', name: 'enableDvr', type: 'bool', system: false },
+          { id: 'bool3018210274', name: 'enableContentEncryption', type: 'bool', system: false },
+          { id: 'bool3018210275', name: 'startWithLowLatency', type: 'bool', system: false },
+          { id: 'bool3018210276', name: 'recordFromStart', type: 'bool', system: false },
+          { id: 'bool3018210277', name: 'enableMonitorStream', type: 'bool', system: false },
+          { id: 'number3018210278', name: 'broadcastStreamDelayMs', type: 'number', system: false },
+          { id: 'select3018210279', name: 'projection', type: 'select', system: false, values: ['rectangular', '360'] },
+          { id: 'date3018210280', name: 'scheduledEndTime', type: 'date', system: false },
+          { id: 'text3018210281', name: 'defaultLanguage', type: 'text', system: false },
+          { id: 'text3018210282', name: 'defaultAudioLanguage', type: 'text', system: false },
+          { id: 'bool3018210271', name: 'is_archived', type: 'bool', system: false },
+          { id: 'text3018210272', name: 'notes', type: 'text', system: false },
+          { id: 'json3018210273', name: 'metadata_json', type: 'json', system: false },
+        ],
+        indexes: [
+          'CREATE INDEX idx_s_staged_status ON s_staged_videos (status)',
+          'CREATE INDEX idx_s_staged_batch ON s_staged_videos (batch_id)',
+          'CREATE INDEX idx_s_staged_scheduled ON s_staged_videos (scheduledStartTime)',
+          'CREATE INDEX idx_s_staged_archived ON s_staged_videos (is_archived)',
         ],
       });
     }
   },
   {
-    id: '2026-04-24-004-add-staged-indices',
-    description: 'Add performance indices to staged_videos',
+    id: '2026-05-03-004-init-tenant-settings',
+    description: 'Create tenant settings collection (t_app_settings) for KV config',
     run: async (pb) => {
-      const coll = await pb.collections.getOne('staged_videos');
-      coll.indexes = [
-        ...(coll.indexes || []),
-        'CREATE INDEX idx_staged_status ON staged_videos (status)',
-        'CREATE INDEX idx_staged_batch ON staged_videos (batch_id)',
-      ];
-      await pb.collections.update(coll.id, coll);
-    }
-  },
-  {
-    id: '2026-04-24-006-add-staging-and-batches',
-    description: 'Add batches and staged_videos collections for transient staging',
-    run: async (pb) => {
-      // 1. Create Batches
+      try {
+        const existing = await pb.collections.getOne('t_app_settings');
+        existing.listRule = "";
+        existing.viewRule = "";
+        existing.createRule = "";
+        existing.updateRule = "";
+        existing.deleteRule = "";
+        await pb.collections.update(existing.id, existing);
+        return;
+      } catch {}
       await pb.collections.create({
-        name: 'batches',
+        name: 't_app_settings',
         type: 'base',
+        system: false,
+        listRule: "",
+        viewRule: "",
+        createRule: "",
+        updateRule: "",
+        deleteRule: "",
         fields: [
-          { name: 'channel_id', type: 'text', required: true },
-          { name: 'status', type: 'select', values: ['pending', 'processing', 'completed', 'failed'] },
-          { name: 'scheduled_for', type: 'date' },
+          { 
+            id: 'text3208210256', 
+            name: 'id', 
+            type: 'text', 
+            system: true, 
+            primaryKey: true, 
+            required: true, 
+            pattern: '^[a-z0-9]+$',
+            autogeneratePattern: '[a-z0-9]{15}' 
+          },
+          { id: 'text1579384326', name: 'key', type: 'text', required: true, system: false },
+          { id: 'json1579384327', name: 'value', type: 'json', required: true, system: false },
+          { id: 'text1579384328', name: 'category', type: 'text', system: false },
         ],
-      });
-
-      // 2. Create Staged Videos
-      const batches = await pb.collections.getOne('batches');
-      await pb.collections.create({
-        name: 'staged_videos',
-        type: 'base',
-        fields: [
-          { name: 'batch_id', type: 'relation', collectionId: batches.id, maxSelect: 1, required: true },
-          { name: 'status', type: 'select', values: ['idle', 'processing', 'success', 'error'], required: true },
-          { name: 'title', type: 'text', required: true },
-          { name: 'description_brotli_b64', type: 'text' },
-          { name: 'privacyStatus', type: 'select', values: ['public', 'private', 'unlisted'], required: true },
-          { name: 'license', type: 'text' },
-          { name: 'embeddable', type: 'bool' },
-          { name: 'publicStatsViewable', type: 'bool' },
-          { name: 'madeForKids', type: 'bool' },
-          { name: 'tags', type: 'json' },
-          { name: 'categoryId', type: 'text' },
-          { name: 'scheduledStartTime', type: 'date' },
-          { name: 'sort_order', type: 'number' },
+        indexes: [
+          'CREATE UNIQUE INDEX idx_t_settings_key ON t_app_settings (key)',
         ],
       });
     }
@@ -200,14 +385,27 @@ async function run() {
     await ensureMigrationsCollection();
 
     for (const m of migrations) {
-      if (await isApplied(m.id)) {
-        console.log(`⏭️  Skipping applied migration: ${m.id}`);
-        continue;
+      const alreadyApplied = await isApplied(m.id);
+      if (alreadyApplied) {
+        console.log(`🔄 Re-verifying applied migration: ${m.id} (${m.description})...`);
+      } else {
+        console.log(`⚙️  Applying migration: ${m.id} (${m.description})...`);
       }
-      console.log(`⚙️  Applying migration: ${m.id} (${m.description})...`);
-      await m.run(pb);
-      await markApplied(m.id, m.description);
-      console.log(`✅ Applied: ${m.id}`);
+      
+      try {
+        await m.run(pb);
+        if (!alreadyApplied) {
+           await markApplied(m.id, m.description);
+           console.log(`✅ Applied: ${m.id}`);
+        } else {
+           console.log(`✅ Verified/Updated: ${m.id}`);
+        }
+      } catch (e: any) {
+        if (e.response && e.response.data) {
+          console.error(`❌ Validation Error details:`, JSON.stringify(e.response.data, null, 2));
+        }
+        throw e;
+      }
     }
 
     console.log('✨ All migrations reconciled.');

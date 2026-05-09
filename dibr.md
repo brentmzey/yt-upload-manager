@@ -1,54 +1,106 @@
 # Developer Initial Build & Run (DIBR) - YouTube Upload Manager
 
-This document provides a low-level reference for the initial setup and build process of the YouTube Upload Manager. For daily development, use the `just` commands documented in the [README.md](./README.md).
+This document provides a comprehensive, step-by-step guide on how to configure, build, run, and test the YouTube Upload Manager from scratch. It covers database initialization, Google Cloud API configurations, and testing strategies across all targets.
 
-## 🧱 Environment Bootstrap
+## 🏗 Phase 1: Environment & Initialization
 
-### 1. Nix Pinned Environment
-The project uses Nix to provide a deterministic environment.
-- **Command**: `nix develop`
-- **Effect**: Loads Node.js, Bun, Rust, and PocketBase into your shell.
+### 1. Configure the Environment
+The application operates on a 12-factor architecture, relying on a central `.env` file.
+1. Copy the example configuration:
+   ```bash
+   cp .env.example .env
+   ```
+2. **(Optional)** Adjust `PUBLIC_POCKETBASE_URL` if hosting your database externally.
+3. Keep `PUBLIC_YT_DUMMY_MODE=true` and `YT_DUMMY_MODE=true` during initial development to safely test the UI/Backend bridging without using real Google Cloud quota.
 
-### 2. Dependency Resolution
-We use `bun` for the frontend and `cargo` for the backend.
+### 2. Install Dependencies
+This project utilizes Bun for the web/node layer and Cargo for the Rust native backend.
 ```bash
-just install
+bun install
 ```
 
-## 🛠 Build & Schema Alignment
+### 3. Initialize PocketBase (Database & Schema)
+The app uses PocketBase for metadata storage and runtime config. The UI expects specific collections (e.g., `s_channels`, `t_app_settings`) to be present.
+1. **Start the database:**
+   ```bash
+   pocketbase serve
+   # If you don't have the pocketbase binary globally, download it from pocketbase.io
+   ```
+2. **Apply Migrations (In a new terminal):**
+   ```bash
+   bun run migrate
+   ```
+   *This script authenticates using the default admin credentials in `.env`, applies all Hungarian-notated collections (`s_`, `t_`), and initializes the system.*
+3. **Generate Types:**
+   ```bash
+   bun run typegen
+   ```
+   *This keeps the TypeScript frontend perfectly in sync with your local PocketBase schema.*
 
-### PocketBase Migration
-Align your local PocketBase instance with the optimized schema:
+---
+
+## 🔑 Phase 2: Runtime Configuration (Google Cloud & App Settings)
+
+The app is designed to read configuration dynamically from the database (`t_app_settings`) and store secure payloads in `s_channels`. 
+
+### 1. YouTube Data API Configuration
+To execute real uploads (disabling Dummy Mode), you must provision Google Cloud OAuth 2.0 Credentials:
+1. Navigate to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Enable the **YouTube Data API v3**.
+3. Configure the **OAuth Consent Screen** (Scope: `https://www.googleapis.com/auth/youtube.upload`).
+4. Generate **OAuth 2.0 Client IDs**:
+   * **Native/Desktop App:** Create a "Desktop app" client. (Tauri handles the localhost redirect securely).
+   * **Web App:** Create a "Web application" client. Allow authorized redirect URIs (e.g., `http://localhost:1420`).
+5. **In the App UI:** Go to **Channel Management -> Add New Channel** and enter the `Client ID` and `Client Secret`. 
+   * *Architecture Note:* The app applies **Brotli compression** to this configuration, stores it in `s_channels`, and the Rust backend seamlessly decompresses it at execution time.
+
+### 2. Dynamic Settings
+Navigate to the PocketBase Admin UI (`http://127.0.0.1:8090/_/`) -> `t_app_settings` to modify live parameters (e.g., `max_concurrent_uploads`, `default_category_id`). The UI fetches these automatically via the `PocketBaseService`.
+
+---
+
+## 🚀 Phase 3: Building, Running & Inspecting
+
+The application is structured to compile natively to Desktop (macOS/Windows/Linux), Mobile, and Web.
+
+### 1. Native Desktop (Tauri)
+To run the fully integrated, native application with Rust processing:
 ```bash
-just up
+bun run tauri dev
 ```
-This command starts PocketBase in the background, creates a default superuser, and runs the step-wise migration script.
+* **Inspection:** Right-click the app window to open the Web Inspector (Chrome/Safari DevTools depending on OS). Rust backend logs print directly to your terminal.
 
-### Type Linkage (Bindings)
-Ensure the Rust backend and TypeScript frontend are in sync:
+### 2. Web / Server-Side Rendering (Astro/React)
+To run just the web frontend (which will attempt to communicate with an Edge Backend defined by `PUBLIC_EDGE_BACKEND_URL`):
 ```bash
-just gen-bindings
+bun run dev
 ```
 
-## 🚀 Execution Reference
-
-### Development Mode (Desktop)
+### 3. Build & Package (Local Artifacts)
+To locally simulate what the CI/CD pipeline executes to generate installable artifacts (`.dmg`, `.app`, `.msi`, `.deb`):
 ```bash
-just tauri
+bun run tauri build
 ```
+*Outputs are placed in `src-tauri/target/release/bundle/`.*
 
-### Web Mode
+---
+
+## 🧪 Phase 4: Testing & CI/CD Strategy
+
+### 1. Unit & Integration Testing (Local)
+Test the compression pipeline, staging flow, and PocketBase integration in a simulated environment:
 ```bash
-just dev
+bun run test
 ```
 
-### Validation
+### 2. Rust Backend Validation
+Validate the Tauri Command inputs, data structures, and Brotli decompression logic natively:
 ```bash
-just validate
+cd src-tauri && cargo test
 ```
 
-## 📋 Common Troubleshooting
-- **Command Not Found**: Ensure you are inside the `nix develop` shell.
-- **Port 8090 Already in Use**: Run `just db-stop` to clear any stale PocketBase instances.
-- **Binding Mismatch**: Run `just gen-bindings` to regenerate the TypeScript types from Rust.
-- **Cache Issues**: Run `just fix-cache` to wipe `node_modules/.vite` and `node_modules/.astro`.
+### 3. CI/CD (GitHub Actions)
+The repository includes a comprehensive `.github/workflows/ci.yml` pipeline that triggers on push/PR:
+* **Validation:** Concurrently executes `bun run test` and `cargo test` on Ubuntu, macOS, and Windows.
+* **Dummy Mode Injection:** The CI environment automatically enforces `YT_DUMMY_MODE=true` to prevent credential/quota exhaustion during automated tests.
+* **Artifact Release:** Upon successful compilation, the pipeline utilizes `tauri-apps/tauri-action` to build native installers and attaches them automatically to GitHub Draft Releases, enabling version-by-version distribution.

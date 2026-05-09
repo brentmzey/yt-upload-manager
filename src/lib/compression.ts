@@ -24,13 +24,20 @@ export type CompressedField = keyof typeof COMPRESSED_FIELDS_MAP;
 export const compressToBrotliB64 = (text: string): Effect.Effect<string, CompressionError> =>
   Effect.tryPromise({
     try: async () => {
+      console.log("🧬 Brotli: Waiting for WASM module...");
       const brotli = await brotliPromise;
+      console.log("🧬 Brotli: WASM module loaded. Encoding input...");
       const input = new TextEncoder().encode(text);
+      console.log("🧬 Brotli: Compressing...");
       const compressed = brotli.compress(input);
+      console.log("🧬 Brotli: Compression complete. Converting to B64...");
       // Convert Uint8Array to Base64
       return btoa(String.fromCharCode(...compressed));
     },
-    catch: (error) => new CompressionError("Brotli compression failed", error),
+    catch: (error) => {
+      console.error("🧬 Brotli: FAILED", error);
+      return new CompressionError("Brotli compression failed", error);
+    },
   });
 
 /**

@@ -1,6 +1,7 @@
 # build output
 dist/
-# generated types
+src-tauri/target/
+src-tauri/gen/
 .astro/
 
 # dependencies
@@ -12,14 +13,26 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# PocketBase
+pocketbase
+pocketbase.exe
+pb_data/
+pb_data_main/
+pb_data_test/
+.*_pb_pid
+
+# coverage
+coverage/
 
 # environment variables
 .env
 .env.production
+.env.local
 
 # macOS-specific files
 .DS_Store
 
-# jetbrains setting folder
+# IDEs
 .idea/
 .vscode/
+*.iml

@@ -24,6 +24,13 @@ export const isWeb = (): boolean => {
 };
 
 /**
+ * Returns true if running in dummy mode (simulated backend).
+ */
+export const isDummyMode = (): boolean => {
+  return import.meta.env.PUBLIC_YT_DUMMY_MODE === 'true';
+};
+
+/**
  * Simple helper to log current platform to console
  */
 export const logPlatform = () => {
@@ -33,8 +40,8 @@ export const logPlatform = () => {
   }
   
   if (isTauri()) {
-    console.log('Environment: Tauri (Native)');
+    console.log(`Environment: Tauri (Native) [Dummy: ${isDummyMode()}]`);
   } else {
-    console.log('Environment: Browser (Web)');
+    console.log(`Environment: Browser (Web) [Dummy: ${isDummyMode()}]`);
   }
 };
