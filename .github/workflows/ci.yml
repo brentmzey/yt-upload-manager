@@ -78,7 +78,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2
 
       - name: Setup Rust & Bun
         run: |
@@ -100,6 +100,7 @@ jobs:
       - name: Build Tauri App (AppImage)
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
+          export APPIMAGE_EXTRACT_AND_RUN=1
           bun tauri build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
