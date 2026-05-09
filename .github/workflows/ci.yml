@@ -8,6 +8,7 @@ on:
 
 jobs:
   test-and-build:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +68,7 @@ jobs:
   # Specialized Arch Linux Build
   build-arch-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     container:
       image: archlinux:latest
     steps:
@@ -76,13 +78,14 @@ jobs:
       - name: Install System Dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl nodejs-lts-jod npm
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm
 
       - name: Setup Rust & Bun
         run: |
           rustup default stable
           curl -fsSL https://bun.sh/install | bash
           echo "$HOME/.bun/bin" >> $GITHUB_PATH
+          ln -s $HOME/.bun/bin/bun /usr/local/bin/bun || true
           
       - name: Install JS dependencies
         run: |

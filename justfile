@@ -171,6 +171,8 @@ set-tenant-prop slug key value category='general' is_secret='false':
 # Run full integration tests with a real PocketBase instance
 integration: stop-test-pb test-pb
     #!/usr/bin/env bash
+    # Ensure cleanup on exit (success or failure)
+    trap "just stop-test-pb" EXIT
     set -e
     echo "🧪 Running Integration Tests..."
     # Apply migrations to test DB
