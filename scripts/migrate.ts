@@ -32,14 +32,24 @@ async function ensureAdmin() {
           await pb.admins.authWithPassword(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD);
         } else {
           // Manual fallback for newer SDK + older PB
-          const res = await fetch(`${PB_URL}/api/admins/auth-with-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: PB_ADMIN_EMAIL, password: PB_ADMIN_PASSWORD })
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.message || 'Legacy auth failed');
-          pb.authStore.save(data.token, data.admin);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+          
+          try {
+            const res = await fetch(`${PB_URL}/api/admins/auth-with-password`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: PB_ADMIN_EMAIL, password: PB_ADMIN_PASSWORD }),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Legacy auth failed');
+            pb.authStore.save(data.token, data.admin);
+          } catch (e) {
+            clearTimeout(timeoutId);
+            throw e;
+          }
         }
         console.log('✅ Authenticated as Legacy Admin.');
         return;

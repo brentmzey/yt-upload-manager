@@ -10,9 +10,14 @@ on:
 permissions:
   contents: write
 
+# Prevent multiple concurrent runs of the same workflow from blocking the queue
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-and-build:
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -23,33 +28,50 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          timeout-minutes: 5
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
+          cache: 'npm' # Note: we use bun, but setup-node cache can help with some things
+          timeout-minutes: 5
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
+          timeout-minutes: 5
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          timeout-minutes: 10
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          timeout-minutes: 5
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup2.4-dev
 
       - name: Install JS dependencies
+        timeout-minutes: 10
         run: bun install
 
       - name: Setup Just
         uses: extractions/setup-just@v2
+        with:
+          timeout-minutes: 5
 
       - name: Run CI Suite
+        timeout-minutes: 15
         run: just ci
         env:
           PUBLIC_YT_DUMMY_MODE: true
@@ -60,6 +82,7 @@ jobs:
 
       - name: Build Desktop Binaries
         uses: tauri-apps/tauri-action@v0
+        timeout-minutes: 30
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Fix for AppImage bundling in environments without FUSE
@@ -80,13 +103,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          timeout-minutes: 5
 
       - name: Install System Dependencies
+        timeout-minutes: 15
         run: |
+          # Use a faster mirror if possible, but at least update keys first
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2
 
       - name: Setup Rust & Bun
+        timeout-minutes: 10
         run: |
           rustup default stable
           curl -fsSL https://bun.sh/install | bash
@@ -94,16 +122,19 @@ jobs:
           ln -s $HOME/.bun/bin/bun /usr/local/bin/bun || true
           
       - name: Install JS dependencies
+        timeout-minutes: 10
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           bun install
 
       - name: Build Web
+        timeout-minutes: 10
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           bun run build
 
       - name: Build Tauri App (AppImage)
+        timeout-minutes: 20
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
@@ -116,3 +147,4 @@ jobs:
         with:
           name: arch-linux-bundle
           path: src-tauri/target/release/bundle/
+          timeout-minutes: 5

@@ -117,12 +117,24 @@ up: db-stop get-pb
     $PB superuser upsert admin@yt-manager.com admin123456 > /dev/null
 
     # Start PB in background with auto-migrations DISABLED
+    # Redirect stdout/stderr to log to prevent hanging CI pipes
     echo "📡 Starting server on http://127.0.0.1:8090..."
-    $PB serve --automigrate=false --migrationsDir=pb_migrations_empty &
+    $PB serve --automigrate=false --migrationsDir=pb_migrations_empty > pb.log 2>&1 &
     PB_PID=$!
     
-    # Give it a moment to boot
-    sleep 3
+    # Wait for PB to be responsive (max 15 seconds)
+    echo "⏳ Waiting for PocketBase to boot..."
+    for i in {1..15}; do
+        if curl -s http://127.0.0.1:8090/api/health > /dev/null; then
+            echo "✅ PocketBase is UP."
+            break
+        fi
+        if [ $i -eq 15 ]; then
+            echo "❌ PocketBase failed to start. Check pb.log"
+            exit 1
+        fi
+        sleep 1
+    done
     
     echo "⚙️  Running local tenant migrations..."
     PB_ADMIN_EMAIL=admin@yt-manager.com PB_ADMIN_PASSWORD=admin123456 bun run migrate
@@ -141,9 +153,21 @@ main-up: get-pb
     ./pocketbase superuser upsert --dir=pb_data_main admin@yt-manager.com admin123456 > /dev/null
     
     echo "📡 Starting MAIN server on http://127.0.0.1:8080..."
-    ./pocketbase serve --http=127.0.0.1:8080 --dir=pb_data_main --automigrate=false --migrationsDir=pb_migrations_empty &
+    ./pocketbase serve --http=127.0.0.1:8080 --dir=pb_data_main --automigrate=false --migrationsDir=pb_migrations_empty > pb_main.log 2>&1 &
     PB_MAIN_PID=$!
-    sleep 3
+    
+    echo "⏳ Waiting for Main Database to boot..."
+    for i in {1..15}; do
+        if curl -s http://127.0.0.1:8080/api/health > /dev/null; then
+            echo "✅ Main Database is UP."
+            break
+        fi
+        if [ $i -eq 15 ]; then
+            echo "❌ Main Database failed to start. Check pb_main.log"
+            exit 1
+        fi
+        sleep 1
+    done
     
     echo "⚙️  Running Main DB migrations..."
     MAIN_POCKETBASE_URL=http://127.0.0.1:8080 bun run scripts/migrate-main.ts
@@ -154,6 +178,7 @@ main-up: get-pb
 
 main-stop:
     @[ -f .main_pb_pid ] && kill $(cat .main_pb_pid) && rm .main_pb_pid && echo "🛑 Main PB stopped." || true
+    @pkill -9 -f "pocketbase serve --http=127.0.0.1:8080" 2>/dev/null || true
 
 # Programmatically align schemas across ALL registered tenant databases
 sync-tenants:
@@ -181,7 +206,6 @@ integration: stop-test-pb test-pb
     # Run vitest targeting the integration test file
     RUN_INTEGRATION_TESTS=1 VITE_TEST_PB_URL=http://127.0.0.1:8091 bun run test src/test/integration_pocketbase.test.ts
     
-    just stop-test-pb
     echo "✅ Integration tests passed."
 
 # Run Vitest test suite
@@ -211,7 +235,8 @@ db-stop:
     else
         pkill -9 pocketbase 2>/dev/null || true
     fi
-    @echo "🛑 PocketBase stopped."
+    @rm -f .test_pb_pid .main_pb_pid
+    @echo "🛑 All PocketBase instances stopped."
 
 # Start an isolated PocketBase for integration testing
 test-pb: get-pb
@@ -222,7 +247,7 @@ test-pb: get-pb
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
         taskkill //F //IM pocketbase.exe //T 2>/dev/null || true
     else
-        pkill -9 pocketbase 2>/dev/null || true
+        pkill -9 -f "pocketbase serve --http=127.0.0.1:8091" 2>/dev/null || true
     fi
     rm -rf pb_data_test
     
@@ -230,15 +255,28 @@ test-pb: get-pb
     ./pocketbase superuser upsert --dir=pb_data_test test@example.com test123456 > /dev/null
     
     echo "📡 Starting Test server on http://127.0.0.1:8091..."
-    ./pocketbase serve --http=127.0.0.1:8091 --dir=pb_data_test --automigrate=false --migrationsDir=pb_migrations_empty &
+    ./pocketbase serve --http=127.0.0.1:8091 --dir=pb_data_test --automigrate=false --migrationsDir=pb_migrations_empty > pb_test.log 2>&1 &
     PB_PID=$!
-    sleep 2
+    
+    echo "⏳ Waiting for Test Database to boot..."
+    for i in {1..15}; do
+        if curl -s http://127.0.0.1:8091/api/health > /dev/null; then
+            echo "✅ Test Database is UP."
+            break
+        fi
+        if [ $i -eq 15 ]; then
+            echo "❌ Test Database failed to start. Check pb_test.log"
+            exit 1
+        fi
+        sleep 1
+    done
     
     echo "✅ Test Database is ready on port 8091."
     echo $PB_PID > .test_pb_pid
 
 stop-test-pb:
     @[ -f .test_pb_pid ] && kill $(cat .test_pb_pid) && rm .test_pb_pid && echo "🛑 Test PB stopped." || true
+    @pkill -9 -f "pocketbase serve --http=127.0.0.1:8091" 2>/dev/null || true
 
 # Run migrations on a running PocketBase instance
 migrate:
