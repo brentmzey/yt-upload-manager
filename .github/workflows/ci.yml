@@ -21,38 +21,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-latest, macos-13, windows-latest]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          timeout-minutes: 5
+        timeout-minutes: 5
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
+        timeout-minutes: 5
         with:
           node-version: 22.12.0
-          cache: 'npm' # Note: we use bun, but setup-node cache can help with some things
-          timeout-minutes: 5
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
+        timeout-minutes: 5
         with:
           bun-version: latest
-          timeout-minutes: 5
+          cache: true
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          timeout-minutes: 10
+        timeout-minutes: 10
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-        with:
-          timeout-minutes: 5
+        timeout-minutes: 5
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
@@ -63,12 +60,11 @@ jobs:
 
       - name: Install JS dependencies
         timeout-minutes: 10
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Setup Just
         uses: extractions/setup-just@v2
-        with:
-          timeout-minutes: 5
+        timeout-minutes: 5
 
       - name: Run CI Suite
         timeout-minutes: 15
@@ -103,15 +99,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          timeout-minutes: 5
+        timeout-minutes: 5
 
       - name: Install System Dependencies
         timeout-minutes: 15
         run: |
-          # Use a faster mirror if possible, but at least update keys first
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2 squashfs-tools file
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
@@ -125,7 +119,7 @@ jobs:
         timeout-minutes: 10
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
-          bun install
+          bun install --frozen-lockfile
 
       - name: Build Web
         timeout-minutes: 10
