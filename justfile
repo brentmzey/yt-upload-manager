@@ -177,8 +177,13 @@ main-up: get-pb
     echo "💡 Run 'just main-stop' to kill it."
 
 main-stop:
-    @[ -f .main_pb_pid ] && kill $(cat .main_pb_pid) && rm .main_pb_pid && echo "🛑 Main PB stopped." || true
-    @pkill -9 -f "pocketbase serve --http=127.0.0.1:8080" 2>/dev/null || true
+    #!/usr/bin/env bash
+    [ -f .main_pb_pid ] && kill $(cat .main_pb_pid) 2>/dev/null && rm .main_pb_pid && echo "🛑 Main PB stopped via PID." || true
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        taskkill //F //FI "WINDOWTITLE eq PocketBase*" //T 2>/dev/null || true
+    else
+        pkill -9 -f "[p]ocketbase serve --http=127.0.0.1:8080" 2>/dev/null || true
+    fi
 
 # Programmatically align schemas across ALL registered tenant databases
 sync-tenants:
@@ -233,7 +238,7 @@ db-stop:
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
         taskkill //F //IM pocketbase.exe //T 2>/dev/null || true
     else
-        pkill -9 pocketbase 2>/dev/null || true
+        pkill -9 "[p]ocketbase" 2>/dev/null || true
     fi
     @rm -f .test_pb_pid .main_pb_pid
     @echo "🛑 All PocketBase instances stopped."
@@ -244,11 +249,7 @@ test-pb: get-pb
     set -e
     echo "🧪 Preparing Test PocketBase..."
     # Kill any existing test PB (cross-platform)
-    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-        taskkill //F //IM pocketbase.exe //T 2>/dev/null || true
-    else
-        pkill -9 -f "pocketbase serve --http=127.0.0.1:8091" 2>/dev/null || true
-    fi
+    just stop-test-pb
     rm -rf pb_data_test
     
     # Create superuser BEFORE serving
@@ -275,8 +276,13 @@ test-pb: get-pb
     echo $PB_PID > .test_pb_pid
 
 stop-test-pb:
-    @[ -f .test_pb_pid ] && kill $(cat .test_pb_pid) && rm .test_pb_pid && echo "🛑 Test PB stopped." || true
-    @pkill -9 -f "pocketbase serve --http=127.0.0.1:8091" 2>/dev/null || true
+    #!/usr/bin/env bash
+    [ -f .test_pb_pid ] && kill $(cat .test_pb_pid) 2>/dev/null && rm .test_pb_pid && echo "🛑 Test PB stopped via PID." || true
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        taskkill //F //FI "WINDOWTITLE eq PocketBase*" //T 2>/dev/null || true
+    else
+        pkill -9 -f "[p]ocketbase serve --http=127.0.0.1:8091" 2>/dev/null || true
+    fi
 
 # Run migrations on a running PocketBase instance
 migrate:

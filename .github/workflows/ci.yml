@@ -66,15 +66,23 @@ jobs:
         uses: extractions/setup-just@v2
         timeout-minutes: 5
 
-      - name: Run CI Suite
+      - name: Run Unit Tests
+        timeout-minutes: 10
+        run: just test
+
+      - name: Run Integration Tests
         timeout-minutes: 15
-        run: just ci
+        run: just integration
         env:
           PUBLIC_YT_DUMMY_MODE: true
           YT_DUMMY_MODE: true
           PB_ADMIN_EMAIL: test@example.com
           PB_ADMIN_PASSWORD: test123456
           POCKETBASE_URL: http://127.0.0.1:8091
+
+      - name: Build Web
+        timeout-minutes: 10
+        run: just build-web
 
       - name: Build Desktop Binaries
         uses: tauri-apps/tauri-action@v0
@@ -105,7 +113,7 @@ jobs:
         timeout-minutes: 15
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2 squashfs-tools file
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
