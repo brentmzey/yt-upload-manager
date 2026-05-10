@@ -205,7 +205,12 @@ check-env:
 
 # Stop any running PocketBase instance
 db-stop:
-    @-lsof -t -i :8090 | xargs kill -9 2>/dev/null || true
+    #!/usr/bin/env bash
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        taskkill //F //IM pocketbase.exe //T 2>/dev/null || true
+    else
+        pkill -9 pocketbase 2>/dev/null || true
+    fi
     @echo "🛑 PocketBase stopped."
 
 # Start an isolated PocketBase for integration testing
@@ -213,8 +218,12 @@ test-pb: get-pb
     #!/usr/bin/env bash
     set -e
     echo "🧪 Preparing Test PocketBase..."
-    # Kill any existing test PB
-    lsof -t -i :8091 | xargs kill -9 2>/dev/null || true
+    # Kill any existing test PB (cross-platform)
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        taskkill //F //IM pocketbase.exe //T 2>/dev/null || true
+    else
+        pkill -9 pocketbase 2>/dev/null || true
+    fi
     rm -rf pb_data_test
     
     # Create superuser BEFORE serving
