@@ -113,7 +113,7 @@ jobs:
         timeout-minutes: 15
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
@@ -140,7 +140,7 @@ jobs:
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
-          bun tauri build
+          bun tauri build --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
