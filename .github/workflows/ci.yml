@@ -117,7 +117,7 @@ jobs:
         timeout-minutes: 15
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat binutils
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat binutils gtk3 gdk-pixbuf2
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
@@ -145,21 +145,32 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
           
-          # Download official linuxdeploy (often newer than the one Tauri mirrors)
+          # Pre-populate Tauri tool cache to bypass download and force our patched version
+          mkdir -p ~/.cache/tauri
+          
+          # Download official linuxdeploy
           wget -q -O linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy.AppImage
           
-          # Extract it to modify the internal toolchain
+          # Extract and patch internal strip
           ./linuxdeploy.AppImage --appimage-extract
-          
-          # Force it to use the system strip which supports modern ELF RELR relocations
           rm -f squashfs-root/usr/bin/strip
           ln -s /usr/bin/strip squashfs-root/usr/bin/strip
           
-          # Point Tauri to our patched linuxdeploy
-          export LINUXDEPLOY=$(pwd)/squashfs-root/usr/bin/linuxdeploy
-          export NO_STRIP=1
+          # Re-bundle or just use the extracted binary?
+          # Easier to just point Tauri to the extracted one if it supports it, 
+          # but placing the AppImage in cache is more reliable for Tauri.
+          # We'll use the extracted directory and set the PATH to our patched linuxdeploy.
+          mv squashfs-root/usr/bin/linuxdeploy ~/.cache/tauri/linuxdeploy-x86_64
+          chmod +x ~/.cache/tauri/linuxdeploy-x86_64
           
+          # We also need to make sure the extracted resources are available if needed
+          # But usually linuxdeploy is self-contained enough or looks in its own Dir.
+          
+          export NO_STRIP=1
+          export STRIP=true
+          
+          # Use the local tauri cli to ensure it picks up the environment
           bun run tauri build --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
