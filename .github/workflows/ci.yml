@@ -104,6 +104,10 @@ jobs:
     timeout-minutes: 45
     container:
       image: archlinux:latest
+    env:
+      NO_STRIP: "true"
+      STRIP: "true"
+      LINUXDEPLOY_STRIP: "0"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -113,7 +117,7 @@ jobs:
         timeout-minutes: 15
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat
+          pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat binutils
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
@@ -140,7 +144,23 @@ jobs:
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
-          bun tauri build --verbose
+          
+          # Download official linuxdeploy (often newer than the one Tauri mirrors)
+          wget -q -O linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage
+          
+          # Extract it to modify the internal toolchain
+          ./linuxdeploy.AppImage --appimage-extract
+          
+          # Force it to use the system strip which supports modern ELF RELR relocations
+          rm -f squashfs-root/usr/bin/strip
+          ln -s /usr/bin/strip squashfs-root/usr/bin/strip
+          
+          # Point Tauri to our patched linuxdeploy
+          export LINUXDEPLOY=$(pwd)/squashfs-root/usr/bin/linuxdeploy
+          export NO_STRIP=1
+          
+          bun run tauri build --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
