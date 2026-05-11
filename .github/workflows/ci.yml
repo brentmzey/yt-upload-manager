@@ -118,6 +118,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat binutils gtk3 gdk-pixbuf2
+          gdk-pixbuf-query-loaders --update-cache
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
@@ -158,11 +159,9 @@ jobs:
           ln -s /usr/bin/strip squashfs-root/usr/bin/strip
           
           # Re-bundle or just use the extracted binary?
-          # Easier to just point Tauri to the extracted one if it supports it, 
-          # but placing the AppImage in cache is more reliable for Tauri.
-          # We'll use the extracted directory and set the PATH to our patched linuxdeploy.
-          mv squashfs-root/usr/bin/linuxdeploy ~/.cache/tauri/linuxdeploy-x86_64
-          chmod +x ~/.cache/tauri/linuxdeploy-x86_64
+          # Tauri expects the .AppImage extension in its cache directory.
+          mv squashfs-root/usr/bin/linuxdeploy ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
           
           # We also need to make sure the extracted resources are available if needed
           # But usually linuxdeploy is self-contained enough or looks in its own Dir.
