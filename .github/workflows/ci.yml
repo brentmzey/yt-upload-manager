@@ -146,30 +146,20 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
           
-          # Pre-populate Tauri tool cache to bypass download and force our patched version
-          mkdir -p ~/.cache/tauri
-          
-          # Download official linuxdeploy
-          wget -q -O linuxdeploy.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy.AppImage
-          
-          # Extract and patch internal strip
-          ./linuxdeploy.AppImage --appimage-extract
-          rm -f squashfs-root/usr/bin/strip
-          ln -s /usr/bin/strip squashfs-root/usr/bin/strip
-          
-          # Re-bundle or just use the extracted binary?
-          # Tauri expects the .AppImage extension in its cache directory.
-          mv squashfs-root/usr/bin/linuxdeploy ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
-          
-          # We also need to make sure the extracted resources are available if needed
-          # But usually linuxdeploy is self-contained enough or looks in its own Dir.
-          
+          # The GTK plugin expects this specific path which might be different on Arch
+          # or missing in the minimal container.
+          GDK_PIXBUF_DIR=$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0 || echo "/usr/lib/gdk-pixbuf-2.0/2.10.0")
+          if [ ! -d "$GDK_PIXBUF_DIR" ]; then
+            echo "⚠️  $GDK_PIXBUF_DIR not found, attempting to locate..."
+            ACTUAL_DIR=$(find /usr/lib -name "2.10.0" -type d | grep gdk-pixbuf | head -n 1)
+            if [ -n "$ACTUAL_DIR" ] && [ "$ACTUAL_DIR" != "$GDK_PIXBUF_DIR" ]; then
+              echo "🔗 Symlinking $ACTUAL_DIR to $GDK_PIXBUF_DIR"
+              mkdir -p $(dirname "$GDK_PIXBUF_DIR")
+              ln -s "$ACTUAL_DIR" "$GDK_PIXBUF_DIR"
+            fi
+          fi
+
           export NO_STRIP=1
-          export STRIP=true
-          
-          # Use the local tauri cli to ensure it picks up the environment
           bun run tauri build --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
