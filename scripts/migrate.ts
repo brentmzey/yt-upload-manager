@@ -391,6 +391,30 @@ const migrations: MigrationStep[] = [
         ],
       });
     }
+  },
+  {
+    id: '2026-05-12-001-add-job-type-to-staged-videos',
+    description: 'Add job_type field to s_staged_videos for smart multi-upload tracking',
+    run: async (pb) => {
+      try {
+        const collection = await pb.collections.getOne('s_staged_videos');
+        const hasJobType = collection.fields.some(f => f.name === 'job_type');
+        if (!hasJobType) {
+          collection.fields.push({
+            id: 'select3018210283',
+            name: 'job_type',
+            type: 'select',
+            required: true,
+            system: false,
+            values: ['VideoUpload', 'LiveBroadcast']
+          });
+          await pb.collections.update(collection.id, collection);
+          console.log('✅ Added job_type field to s_staged_videos');
+        }
+      } catch (e) {
+        console.error('❌ Failed to update s_staged_videos:', e);
+      }
+    }
   }
 ];
 

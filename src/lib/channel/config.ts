@@ -19,6 +19,7 @@ export const YouTubeLatencyPreference = Schema.Literal('normal', 'low', 'ultraLo
 export const YouTubeProjection = Schema.Literal('rectangular', '360');
 
 export const VideoMetadataSchema = Schema.Struct({
+  job_type: Schema.Literal('VideoUpload', 'LiveBroadcast'),
   title: Schema.String.pipe(Schema.nonEmptyString()),
   description: Schema.String,
   privacyStatus: YouTubePrivacyStatus,
@@ -97,6 +98,7 @@ export const StagedVideoRecordSchema = Schema.Struct({
   id: Schema.String,
   batch_id: Schema.String, // Relation -> s_batches
   status: Schema.Literal('idle', 'processing', 'success', 'error'),
+  job_type: Schema.Literal('VideoUpload', 'LiveBroadcast'),
   title: Schema.String,
   description_brotli_b64: Schema.Option(Schema.String),
   privacyStatus: YouTubePrivacyStatus,

@@ -49,9 +49,17 @@ impl Serialize for AppError {
 
 type AppResult<T> = Result<T, AppError>;
 
+#[derive(Serialize, Deserialize, TS, Debug, Clone, PartialEq)]
+#[ts(export, export_to = "../../src/bindings/youtube_types.ts")]
+pub enum YouTubeJobType {
+    VideoUpload,
+    LiveBroadcast,
+}
+
 #[derive(Serialize, Deserialize, TS, Debug, Clone)]
 #[ts(export, export_to = "../../src/bindings/youtube_types.ts")]
 pub struct VideoMetadataPayload {
+    pub job_type: YouTubeJobType,
     pub title: String,
     pub description: String,
     pub privacy_status: String,
@@ -122,6 +130,7 @@ pub struct AppState {
     pub system: Mutex<System>,
     pub active_jobs: Arc<Mutex<u32>>,
     pub job_tx: mpsc::Sender<VideoMetadataPayload>,
+    pub concurrency_limit: Arc<tokio::sync::Semaphore>,
 }
 
 // --- Background Worker ---
@@ -135,6 +144,9 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
         info!("Rust Worker: RUNNING IN DUMMY MODE (Simulated latency & failures enabled)");
     }
 
+    let state = app_handle.state::<AppState>();
+    let semaphore = Arc::clone(&state.concurrency_limit);
+
     while let Some(payload) = rx.recv().await {
         {
             match active_jobs.lock() {
@@ -143,8 +155,10 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
             }
         }
 
-        let is_scheduling = payload.scheduled_start_time.is_some() || payload.scheduled_start_time_millis.is_some();
-        let job_type = if is_scheduling { "Scheduling" } else { "Upload" };
+        let job_type_label = match payload.job_type {
+            YouTubeJobType::VideoUpload => "VideoUpload",
+            YouTubeJobType::LiveBroadcast => "LiveBroadcast",
+        };
         
         // --- HUMAN READABLE LOGGING USING HINTS ---
         let display_desc = if payload.compressed_fields.contains(&"description".to_string()) || payload.is_compressed.unwrap_or(false) {
@@ -153,18 +167,29 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
             payload.description.clone()
         };
 
-        info!("Rust Worker: Starting {} job for {} (Desc Length: {} chars)", job_type, payload.title, display_desc.len());
+        info!("Rust Worker: Starting {} job for {} (Desc Length: {} chars)", job_type_label, payload.title, display_desc.len());
         trace!("Decompressed Description: {}", display_desc);
         
         // Simulate long-running task
         let job_active_jobs = Arc::clone(&active_jobs);
         let job_payload = payload.clone();
         let job_handle = app_handle.clone();
-        let job_type_label = job_type.to_string();
+        let job_semaphore = Arc::clone(&semaphore);
 
         tauri::async_runtime::spawn(async move {
-            debug!("Task spawned for {}: {}", job_type_label, job_payload.title);
+            debug!("Task spawned for {}: {}. Waiting for concurrency permit...", job_type_label, job_payload.title);
             
+            // Acquire concurrency permit
+            let _permit = match job_semaphore.acquire().await {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("Failed to acquire concurrency permit: {}", e);
+                    return;
+                }
+            };
+
+            info!("Permit acquired for {}: {}. Starting execution.", job_type_label, job_payload.title);
+
             if dummy_mode {
                 // Generate latency before any RNG is held across awaits
                 let secs = rand::random_range(2..7);
@@ -186,8 +211,19 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
                     }).unwrap_or_default();
                 }
             } else {
-                // Real implementation (mocked for now)
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                // Real implementation (mocked for now, but distinguishing logic)
+                match job_payload.job_type {
+                    YouTubeJobType::VideoUpload => {
+                        debug!("Executing VideoUpload logic for {}", job_payload.title);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    },
+                    YouTubeJobType::LiveBroadcast => {
+                        debug!("Executing LiveBroadcast creation logic for {}", job_payload.title);
+                        // Here we would call youtube.live_broadcasts().insert(...)
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    }
+                }
+
                 info!("Rust Worker: Completed {} for {}", job_type_label, job_payload.title);
                 job_handle.emit("job-completed", BatchJobResponse {
                     video_id: "yt-simulated-id".to_string(),
@@ -278,6 +314,7 @@ pub fn run() {
     let (tx, rx) = mpsc::channel(100);
     let active_jobs = Arc::new(Mutex::new(0));
     let active_jobs_clone = Arc::clone(&active_jobs);
+    let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3)); // Max 3 concurrent uploads
 
     let mut system = System::new_all();
     system.refresh_all();
@@ -289,16 +326,17 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
             
-            // Start background worker using Tauri's async runtime
-            tauri::async_runtime::spawn(async move {
-                start_background_worker(rx, active_jobs_clone, app_handle).await;
-            });
-
-            // Manage State
+            // Manage State FIRST so worker can access it via app_handle.state()
             app.manage(AppState {
                 system: Mutex::new(system),
                 active_jobs,
                 job_tx: tx,
+                concurrency_limit,
+            });
+
+            // Start background worker using Tauri's async runtime
+            tauri::async_runtime::spawn(async move {
+                start_background_worker(rx, active_jobs_clone, app_handle).await;
             });
 
             Ok(())
@@ -320,6 +358,7 @@ mod tests {
     fn setup_app() -> (tauri::App<tauri::test::MockRuntime>, mpsc::Receiver<VideoMetadataPayload>) {
         let (tx, rx) = mpsc::channel(100);
         let active_jobs = Arc::new(Mutex::new(0));
+        let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3));
         let mut system = System::new_all();
         system.refresh_all();
 
@@ -331,6 +370,7 @@ mod tests {
             system: Mutex::new(system),
             active_jobs,
             job_tx: tx,
+            concurrency_limit,
         });
         
         (app, rx)
@@ -353,6 +393,7 @@ mod tests {
         let state: State<AppState> = app.state();
         
         let payload = VideoMetadataPayload {
+            job_type: YouTubeJobType::VideoUpload,
             title: "Test Video".to_string(),
             description: "Test Description".to_string(),
             privacy_status: "private".to_string(),

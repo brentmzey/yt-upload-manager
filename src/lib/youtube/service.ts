@@ -4,7 +4,7 @@ import { logInfo, logError, LoggerService } from '../logger';
 import { enrichMetadata } from './enrichment';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { VideoMetadataPayload, BatchJobResponse, YouTubeVideoDetails } from '../../bindings/youtube_types';
+import type { VideoMetadataPayload, BatchJobResponse, YouTubeVideoDetails, YouTubeJobType } from '../../bindings/youtube_types';
 import { Option } from 'effect';
 import { isTauri } from '../env';
 import { compressToBrotliB64 } from '../compression';
@@ -52,7 +52,7 @@ const fileToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-const toPayload = async (metadata: typeof VideoMetadataSchema.Type, thumbnailB64: string | null = null): Promise<VideoMetadataPayload> => {
+const toPayload = async (metadata: typeof VideoMetadataSchema.Type, job_type: YouTubeJobType, thumbnailB64: string | null = null): Promise<VideoMetadataPayload> => {
   const scheduledTime = Option.getOrNull(metadata.scheduledStartTime);
   let millis: bigint | null = null;
   if (scheduledTime) {
@@ -76,6 +76,7 @@ const toPayload = async (metadata: typeof VideoMetadataSchema.Type, thumbnailB64
   }
 
   return {
+    job_type,
     title: metadata.title,
     description,
     privacy_status: metadata.privacyStatus,
@@ -121,7 +122,7 @@ export const YouTubeServiceTauri = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend upload job', { title: metadata.title }));
         const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
-        const payload = yield* _(Effect.promise(() => toPayload(metadata, thumbnailB64)));
+        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'VideoUpload', thumbnailB64)));
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -135,7 +136,7 @@ export const YouTubeServiceTauri = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend scheduling job', { title: metadata.title }));
         const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
-        const payload = yield* _(Effect.promise(() => toPayload(metadata, thumbnailB64)));
+        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'LiveBroadcast', thumbnailB64)));
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -172,7 +173,7 @@ export const YouTubeServiceWeb = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending upload to Edge backend', { title: metadata.title }));
         
-        const payload = yield* _(Effect.promise(() => toPayload(metadata)));
+        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'VideoUpload')));
         const formData = new FormData();
         formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         formData.append('video', file);
@@ -197,7 +198,7 @@ export const YouTubeServiceWeb = Layer.succeed(
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending scheduling to Edge backend', { title: metadata.title }));
         
-        const payload = yield* _(Effect.promise(() => toPayload(metadata)));
+        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'LiveBroadcast')));
         const formData = new FormData();
         formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         if (thumbnail) {
@@ -268,7 +269,8 @@ export const processBatch = (
           return mode === 'upload' 
             ? yield* _(service.uploadVideo(enriched, file, thumbnail))
             : yield* _(service.scheduleLiveStream(enriched, thumbnail));
-        })
+        }),
+        { concurrency: 5 } // Allow queueing up to 5 jobs concurrently to the backend
       ),
       Stream.runCollect
     );

@@ -95,6 +95,7 @@ export const BatchManager: React.FC = () => {
           finishedAt: sv.finished_at,
           error: sv.error_message,
           metadata: {
+            job_type: (sv as any).job_type || (sv.scheduledStartTime ? 'LiveBroadcast' : 'VideoUpload'),
             title: sv.title,
             description,
             privacyStatus: sv.privacyStatus,
@@ -168,6 +169,7 @@ export const BatchManager: React.FC = () => {
         id: task.pbId,
         batch_id: batchId,
         status: task.status,
+        job_type: task.metadata.job_type,
         title: task.metadata.title,
         description_brotli_b64: compressedDesc,
         privacyStatus: task.metadata.privacyStatus,
@@ -209,6 +211,7 @@ export const BatchManager: React.FC = () => {
   };
 
   const createDefaultMetadata = (title: string, scheduleOffsetDays: number): typeof VideoMetadataSchema.Type => ({
+    job_type: mode === 'schedule' ? 'LiveBroadcast' : 'VideoUpload',
     title,
     description: 'Bulk staged via YouTube Manager',
     privacyStatus: 'private',
