@@ -335,6 +335,7 @@ pub fn run() {
     let active_jobs = Arc::new(Mutex::new(0));
     let active_jobs_clone = Arc::clone(&active_jobs);
     let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3)); // Max 3 concurrent uploads
+    let youtube = Arc::new(YouTubeClient::new());
 
     let mut system = System::new_all();
     system.refresh_all();
@@ -352,6 +353,7 @@ pub fn run() {
                 active_jobs,
                 job_tx: tx,
                 concurrency_limit,
+                youtube,
             });
 
             // Start background worker using Tauri's async runtime
@@ -379,6 +381,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(100);
         let active_jobs = Arc::new(Mutex::new(0));
         let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3));
+        let youtube = Arc::new(YouTubeClient::new());
         let mut system = System::new_all();
         system.refresh_all();
 
@@ -391,6 +394,7 @@ mod tests {
             active_jobs,
             job_tx: tx,
             concurrency_limit,
+            youtube,
         });
         
         (app, rx)
