@@ -19,12 +19,14 @@ export class YouTubeError {
 
 export interface YouTubeService {
   readonly uploadVideo: (
+    channelId: string,
     metadata: typeof VideoMetadataSchema.Type,
     file: Blob,
     thumbnail?: Blob
   ) => Effect.Effect<string, YouTubeError, LoggerService>;
   
   readonly scheduleLiveStream: (
+    channelId: string,
     metadata: typeof VideoMetadataSchema.Type,
     thumbnail?: Blob
   ) => Effect.Effect<string, YouTubeError, LoggerService>;
@@ -52,7 +54,7 @@ const fileToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-const toPayload = async (metadata: typeof VideoMetadataSchema.Type, job_type: YouTubeJobType, thumbnailB64: string | null = null): Promise<VideoMetadataPayload> => {
+const toPayload = async (channelId: string, metadata: typeof VideoMetadataSchema.Type, job_type: YouTubeJobType, thumbnailB64: string | null = null): Promise<VideoMetadataPayload> => {
   const scheduledTime = Option.getOrNull(metadata.scheduledStartTime);
   let millis: bigint | null = null;
   if (scheduledTime) {
@@ -77,6 +79,7 @@ const toPayload = async (metadata: typeof VideoMetadataSchema.Type, job_type: Yo
 
   return {
     job_type,
+    channel_id: channelId,
     title: metadata.title,
     description,
     privacy_status: metadata.privacyStatus,
@@ -118,11 +121,11 @@ const toPayload = async (metadata: typeof VideoMetadataSchema.Type, job_type: Yo
 export const YouTubeServiceTauri = Layer.succeed(
   YouTubeService,
   {
-    uploadVideo: (metadata, _file, thumbnail) =>
+    uploadVideo: (channelId, metadata, _file, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend upload job', { title: metadata.title }));
         const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
-        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'VideoUpload', thumbnailB64)));
+        const payload = yield* _(Effect.promise(() => toPayload(channelId, metadata, 'VideoUpload', thumbnailB64)));
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -132,11 +135,11 @@ export const YouTubeServiceTauri = Layer.succeed(
         return response.video_id;
       }),
       
-    scheduleLiveStream: (metadata, thumbnail) =>
+    scheduleLiveStream: (channelId, metadata, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Tauri: Queueing backend scheduling job', { title: metadata.title }));
         const thumbnailB64 = thumbnail ? yield* _(Effect.promise(() => fileToBase64(thumbnail))) : null;
-        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'LiveBroadcast', thumbnailB64)));
+        const payload = yield* _(Effect.promise(() => toPayload(channelId, metadata, 'LiveBroadcast', thumbnailB64)));
         const response = yield* _(
           Effect.tryPromise({
             try: () => invoke<BatchJobResponse>('start_youtube_upload_job', { payload }),
@@ -169,11 +172,11 @@ export const YouTubeServiceTauri = Layer.succeed(
 export const YouTubeServiceWeb = Layer.succeed(
   YouTubeService,
   {
-      uploadVideo: (metadata, file, thumbnail) =>
+      uploadVideo: (channelId, metadata, file, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending upload to Edge backend', { title: metadata.title }));
         
-        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'VideoUpload')));
+        const payload = yield* _(Effect.promise(() => toPayload(channelId, metadata, 'VideoUpload')));
         const formData = new FormData();
         formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         formData.append('video', file);
@@ -194,11 +197,11 @@ export const YouTubeServiceWeb = Layer.succeed(
         return response.video_id;
       }),
       
-    scheduleLiveStream: (metadata, thumbnail) =>
+    scheduleLiveStream: (channelId, metadata, thumbnail) =>
       Effect.gen(function* (_) {
         yield* _(logInfo('Web: Sending scheduling to Edge backend', { title: metadata.title }));
         
-        const payload = yield* _(Effect.promise(() => toPayload(metadata, 'LiveBroadcast')));
+        const payload = yield* _(Effect.promise(() => toPayload(channelId, metadata, 'LiveBroadcast')));
         const formData = new FormData();
         formData.append('metadata', JSON.stringify(payload, (_, v) => typeof v === 'bigint' ? v.toString() : v));
         if (thumbnail) {
@@ -267,8 +270,8 @@ export const processBatch = (
           const enriched = yield* _(enrichMetadata(metadata));
           const service = yield* _(YouTubeService);
           return mode === 'upload' 
-            ? yield* _(service.uploadVideo(enriched, file, thumbnail))
-            : yield* _(service.scheduleLiveStream(enriched, thumbnail));
+            ? yield* _(service.uploadVideo(batch.channelId, enriched, file, thumbnail))
+            : yield* _(service.scheduleLiveStream(batch.channelId, enriched, thumbnail));
         }),
         { concurrency: 5 } // Allow queueing up to 5 jobs concurrently to the backend
       ),
