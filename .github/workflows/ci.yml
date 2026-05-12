@@ -183,3 +183,4 @@ jobs:
           name: arch-linux-bundle
           path: src-tauri/target/release/bundle/
           timeout-minutes: 5
+ 
