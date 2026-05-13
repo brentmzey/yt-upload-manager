@@ -91,7 +91,7 @@ describe('E2E Staging & Compression Flow', () => {
     (invoke as any).mockResolvedValue({ video_id: 'yt-123', status: 'Success' });
     
     const program = YouTubeService.pipe(
-      Effect.flatMap(service => service.uploadVideo(metadata, new Blob(['video']), undefined))
+      Effect.flatMap(service => service.uploadVideo('ch-123', metadata, new Blob(['video']), undefined))
     );
 
     const videoId = await Effect.runPromise(Effect.provide(program, AppLayer));
@@ -102,6 +102,7 @@ describe('E2E Staging & Compression Flow', () => {
     expect(lastCall[0]).toBe('start_youtube_upload_job');
     
     const payload = lastCall[1].payload;
+    expect(payload.channel_id).toBe('ch-123');
     expect(payload.compressed_fields).toContain('description');
     expect(payload.is_compressed).toBe(true);
   });

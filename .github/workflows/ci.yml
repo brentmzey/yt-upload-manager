@@ -53,10 +53,10 @@ jobs:
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup2.4-dev
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup2.4-dev libsoup-3.0-dev
 
       - name: Install JS dependencies
         timeout-minutes: 10
@@ -159,16 +159,18 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
           
-          # The GTK plugin expects this specific path which might be different on Arch
-          # or missing in the minimal container.
-          GDK_PIXBUF_DIR=$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0 || echo "/usr/lib/gdk-pixbuf-2.0/2.10.0")
-          if [ ! -d "$GDK_PIXBUF_DIR" ]; then
-            echo "⚠️  $GDK_PIXBUF_DIR not found, attempting to locate..."
-            ACTUAL_DIR=$(find /usr/lib -name "2.10.0" -type d | grep gdk-pixbuf | head -n 1)
-            if [ -n "$ACTUAL_DIR" ] && [ "$ACTUAL_DIR" != "$GDK_PIXBUF_DIR" ]; then
-              echo "🔗 Symlinking $ACTUAL_DIR to $GDK_PIXBUF_DIR"
-              mkdir -p $(dirname "$GDK_PIXBUF_DIR")
-              ln -s "$ACTUAL_DIR" "$GDK_PIXBUF_DIR"
+          # Arch Linux specific fix for gdk-pixbuf directory structure expected by linuxdeploy-plugin-gtk
+          # We need to ensure /usr/lib/gdk-pixbuf-2.0/2.10.0 exists and contains what the plugin needs.
+          EXPECTED_DIR="/usr/lib/gdk-pixbuf-2.0/2.10.0"
+          if [ ! -d "$EXPECTED_DIR" ]; then
+            echo "⚠️  $EXPECTED_DIR not found, scanning /usr/lib for gdk-pixbuf loaders..."
+            FOUND_DIR=$(find /usr/lib -type d -name "2.10.0" | grep gdk-pixbuf | head -n 1)
+            if [ -n "$FOUND_DIR" ]; then
+              echo "✅ Found $FOUND_DIR, symlinking to $EXPECTED_DIR"
+              mkdir -p $(dirname "$EXPECTED_DIR")
+              ln -sf "$FOUND_DIR" "$EXPECTED_DIR"
+            else
+              echo "❌ Could not find any gdk-pixbuf directory in /usr/lib"
             fi
           fi
 

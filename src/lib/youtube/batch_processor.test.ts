@@ -60,7 +60,7 @@ describe('Batch Processing Integration', () => {
     expect(mockUpload).toHaveBeenCalledTimes(2);
     
     // Verify enrichment happened before upload
-    expect(mockUpload).toHaveBeenNthCalledWith(1, expect.objectContaining({ title: 'Video for UserA' }), expect.anything(), undefined);
-    expect(mockUpload).toHaveBeenNthCalledWith(2, expect.objectContaining({ title: 'Video for UserB' }), expect.anything(), undefined);
+    expect(mockUpload).toHaveBeenNthCalledWith(1, 'ch-1', expect.objectContaining({ title: 'Video for UserA' }), expect.anything(), undefined);
+    expect(mockUpload).toHaveBeenNthCalledWith(2, 'ch-1', expect.objectContaining({ title: 'Video for UserB' }), expect.anything(), undefined);
   });
 });

@@ -58,7 +58,7 @@ describe('YouTubeService', () => {
       const thumbBlob = new Blob(['thumb'], { type: 'image/png' });
 
       const program = YouTubeService.pipe(
-        Effect.flatMap(service => service.uploadVideo(metadata, videoBlob, thumbBlob))
+        Effect.flatMap(service => service.uploadVideo('ch-123', metadata, videoBlob, thumbBlob))
       );
 
       const result = await Effect.runPromise(
@@ -73,6 +73,7 @@ describe('YouTubeService', () => {
       expect(formData.get('thumbnail')).toBeDefined();
       
       const sentMetadata = JSON.parse(formData.get('metadata') as string);
+      expect(sentMetadata.channel_id).toBe('ch-123');
       expect(sentMetadata.scheduled_start_time_millis).toBeDefined();
       // 2024-05-02T12:00:00Z -> 1714651200000
       expect(sentMetadata.scheduled_start_time_millis.toString()).toBe('1714651200000');
@@ -101,7 +102,7 @@ describe('YouTubeService', () => {
       vi.stubGlobal('FileReader', MockFileReader);
 
       const program = YouTubeService.pipe(
-        Effect.flatMap(service => service.uploadVideo(metadata, videoBlob, thumbBlob))
+        Effect.flatMap(service => service.uploadVideo('ch-123', metadata, videoBlob, thumbBlob))
       );
 
       const result = await Effect.runPromise(
@@ -111,6 +112,7 @@ describe('YouTubeService', () => {
       expect(result).toBe('tauri-vid-123');
       expect(invoke).toHaveBeenCalledWith('start_youtube_upload_job', expect.objectContaining({
         payload: expect.objectContaining({
+          channel_id: 'ch-123',
           thumbnail_data_b64: mockBase64,
           scheduled_start_time_millis: 1714651200000n
         })
