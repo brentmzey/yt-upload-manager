@@ -60,6 +60,7 @@ export const stagedVideoToStorage = (
     return {
       batch_id: batchId,
       status,
+      job_type: domain.job_type,
       title: domain.title,
       description_brotli_b64: Option.some(description_brotli_b64),
       privacyStatus: domain.privacyStatus,
@@ -108,6 +109,7 @@ export const stagedVideoToDomain = (
       : "";
 
     return {
+      job_type: storage.job_type,
       title: storage.title,
       description,
       privacyStatus: storage.privacyStatus,

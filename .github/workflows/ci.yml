@@ -160,18 +160,13 @@ jobs:
           export APPIMAGE_EXTRACT_AND_RUN=1
           
           # Arch Linux specific fix for gdk-pixbuf directory structure expected by linuxdeploy-plugin-gtk
-          # We need to find the actual directory and ensure it exists at the expected path
-          # Often Arch puts it directly in /usr/lib/gdk-pixbuf-2.0/2.10.0
+          # Scan entire /usr for the loaders directory to be 100% sure.
+          echo "🔍 Searching for GDK Pixbuf loaders..."
+          LOADERS_DIR=$(find /usr -name loaders -path "*gdk-pixbuf-2.0*" -type d -print -quit)
           
-          # 1. Re-generate the loaders cache to be sure
-          gdk-pixbuf-query-loaders --update-cache || true
-          
-          # 2. Find where the loaders actually are
-          FOUND_DIR=$(find /usr/lib -type d -path "*/gdk-pixbuf-2.0/*" -name "loaders" -print -quit | xargs dirname)
-          
-          EXPECTED_DIR="/usr/lib/gdk-pixbuf-2.0/2.10.0"
-          
-          if [ -n "$FOUND_DIR" ]; then
+          if [ -n "$LOADERS_DIR" ]; then
+            FOUND_DIR=$(dirname "$LOADERS_DIR")
+            EXPECTED_DIR="/usr/lib/gdk-pixbuf-2.0/2.10.0"
             echo "✅ Found GDK Pixbuf dir at $FOUND_DIR"
             if [ "$FOUND_DIR" != "$EXPECTED_DIR" ]; then
               echo "🔗 Symlinking $FOUND_DIR to $EXPECTED_DIR"
@@ -179,16 +174,16 @@ jobs:
               ln -sf "$FOUND_DIR" "$EXPECTED_DIR"
             fi
           else
-            echo "⚠️  Could not find GDK Pixbuf dir via find, checking pkg-config..."
-            PKG_DIR=$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0 2>/dev/null || echo "")
-            if [ -n "$PKG_DIR" ] && [ -d "$PKG_DIR" ]; then
-               echo "✅ Found via pkg-config: $PKG_DIR"
-               mkdir -p $(dirname "$EXPECTED_DIR")
-               ln -sf "$PKG_DIR" "$EXPECTED_DIR"
-            else
-               echo "❌ CRITICAL: GDK Pixbuf directory not found anywhere!"
-               ls -R /usr/lib | grep gdk-pixbuf || true
-            fi
+             echo "⚠️  Loaders not found via find, trying pkg-config..."
+             PKG_DIR=$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0 2>/dev/null || echo "")
+             if [ -n "$PKG_DIR" ] && [ -d "$PKG_DIR" ]; then
+                echo "✅ Found via pkg-config: $PKG_DIR"
+                mkdir -p /usr/lib/gdk-pixbuf-2.0
+                ln -sf "$PKG_DIR" "/usr/lib/gdk-pixbuf-2.0/2.10.0"
+             else
+                echo "❌ CRITICAL: GDK Pixbuf loaders not found! Printing /usr/lib/gdk-pixbuf-2.0 contents:"
+                ls -R /usr/lib/gdk-pixbuf-2.0 || echo "Directory does not exist"
+             fi
           fi
 
           export NO_STRIP=1
