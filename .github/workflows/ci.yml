@@ -28,54 +28,41 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        timeout-minutes: 5
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
-        timeout-minutes: 5
         with:
           node-version: 22.12.0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
-        timeout-minutes: 5
         with:
           bun-version: latest
           cache: true
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        timeout-minutes: 10
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-        timeout-minutes: 5
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
-        timeout-minutes: 20
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup2.4-dev libsoup-3.0-dev
 
       - name: Install JS dependencies
-        timeout-minutes: 10
         run: bun install --frozen-lockfile
 
       - name: Setup Just
         uses: extractions/setup-just@v2
-        timeout-minutes: 5
 
       - name: Run Unit Tests
-        timeout-minutes: 10
         run: just test
 
       - name: Run Integration Tests
-        timeout-minutes: 15
-        run: |
-          echo "🔍 Checking test file content for job_type..."
-          grep "job_type" src/test/integration_pocketbase.test.ts
-          just integration
+        run: just integration
         env:
           PUBLIC_YT_DUMMY_MODE: true
           YT_DUMMY_MODE: true
@@ -84,13 +71,10 @@ jobs:
           POCKETBASE_URL: http://127.0.0.1:8091
 
       - name: Build Web
-        timeout-minutes: 10
         run: just build-web
 
       - name: Build Desktop Binaries
-        timeout-minutes: 30
         env:
-          # Fix for AppImage bundling in environments without FUSE
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: bun run tauri build --verbose
 
@@ -101,13 +85,13 @@ jobs:
           path: |
             src-tauri/target/release/bundle/
             src-tauri/target/release/*.exe
+            src-tauri/target/release/*.msi
             src-tauri/target/release/*.dmg
             src-tauri/target/release/*.app
             src-tauri/target/release/*.deb
             src-tauri/target/release/*.rpm
           if-no-files-found: warn
 
-  # Specialized Arch Linux Build
   build-arch-linux:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -120,21 +104,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        timeout-minutes: 5
 
       - name: Install System Dependencies
-        timeout-minutes: 15
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat binutils gtk3 gdk-pixbuf2 pkgconf
           
-          # Force create the directory structure that linuxdeploy-plugin-gtk strictly expects.
-          # Modern Arch gdk-pixbuf2 (glycin) may not create this by default, causing cache tool crash.
+          # Critical Fix: Force legacy directory structure for linuxdeploy-plugin-gtk
           mkdir -p /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
           gdk-pixbuf-query-loaders --update-cache || true
 
       - name: Setup Rust & Bun
-        timeout-minutes: 10
         run: |
           rustup default stable
           curl -fsSL https://bun.sh/install | bash
@@ -142,31 +122,62 @@ jobs:
           ln -s $HOME/.bun/bin/bun /usr/local/bin/bun || true
           
       - name: Install JS dependencies
-        timeout-minutes: 10
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           bun install --frozen-lockfile
 
       - name: Build Web
-        timeout-minutes: 10
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           bun run build
 
       - name: Build Tauri App (AppImage)
-        timeout-minutes: 20
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          NO_STRIP: 1
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
-          export APPIMAGE_EXTRACT_AND_RUN=1
-          export NO_STRIP=1
           bun run tauri build --verbose
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Artifact
+      - name: Upload Arch Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arch-linux-bundle
-          path: src-tauri/target/release/bundle/
-          timeout-minutes: 5
+          name: desktop-binaries-archlinux
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+
+  publish-release:
+    needs: [test-and-build, build-arch-linux]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: desktop-binaries-*
+          merge-multiple: true
+
+      - name: List Artifacts
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.dmg
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
+          draft: true
+          prerelease: false
+          tag_name: app-v0.1.0-${{ github.run_number }}
+          name: 'App Build ${{ github.run_number }}'
+          body: 'Automated release containing the latest cross-platform binaries.'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
  
