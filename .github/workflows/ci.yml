@@ -88,18 +88,11 @@ jobs:
         run: just build-web
 
       - name: Build Desktop Binaries
-        uses: tauri-apps/tauri-action@v0
         timeout-minutes: 30
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Fix for AppImage bundling in environments without FUSE
           APPIMAGE_EXTRACT_AND_RUN: 1
-        with:
-          tagName: app-v__VERSION__
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: true
-          prerelease: false
+        run: bun run tauri build --verbose
 
       - name: Upload Cross-Platform Artifacts
         uses: actions/upload-artifact@v4
@@ -134,7 +127,11 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf rustup curl wget unzip openssl npm fuse2 squashfs-tools file desktop-file-utils hicolor-icon-theme which libxcrypt-compat binutils gtk3 gdk-pixbuf2 pkgconf
-          gdk-pixbuf-query-loaders --update-cache
+          
+          # Force create the directory structure that linuxdeploy-plugin-gtk strictly expects.
+          # Modern Arch gdk-pixbuf2 (glycin) may not create this by default, causing cache tool crash.
+          mkdir -p /usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
+          gdk-pixbuf-query-loaders --update-cache || true
 
       - name: Setup Rust & Bun
         timeout-minutes: 10
@@ -161,38 +158,6 @@ jobs:
         run: |
           export PATH="$HOME/.bun/bin:$PATH"
           export APPIMAGE_EXTRACT_AND_RUN=1
-          
-          # Arch Linux specific fix for gdk-pixbuf directory structure expected by linuxdeploy-plugin-gtk
-          EXPECTED_DIR="/usr/lib/gdk-pixbuf-2.0/2.10.0"
-          
-          echo "🔍 Locating GDK Pixbuf loaders..."
-          # Strategy 1: pkg-config
-          FOUND_DIR=$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0 2>/dev/null || echo "")
-          
-          # Strategy 2: Absolute file search if pkg-config fails
-          if [ -z "$FOUND_DIR" ]; then
-            echo "⚠️  pkg-config failed, searching for libpixbufloader-png.so..."
-            LOADER_PATH=$(find /usr/lib -name "libpixbufloader-png.so" | head -n 1)
-            if [ -n "$LOADER_PATH" ]; then
-              FOUND_DIR=$(dirname $(dirname "$LOADER_PATH"))
-            fi
-          fi
-
-          if [ -n "$FOUND_DIR" ] && [ -d "$FOUND_DIR" ]; then
-            echo "✅ Found GDK Pixbuf dir at $FOUND_DIR"
-            if [ "$FOUND_DIR" != "$EXPECTED_DIR" ]; then
-              echo "🔗 Symlinking $FOUND_DIR to $EXPECTED_DIR"
-              mkdir -p $(dirname "$EXPECTED_DIR")
-              ln -sf "$FOUND_DIR" "$EXPECTED_DIR"
-            fi
-          else
-            echo "❌ CRITICAL: GDK Pixbuf loaders not found! Scanning /usr/lib/gdk* as fallback..."
-            ls -R /usr/lib/gdk* || true
-          fi
-
-          # Force query loaders to generate a fresh cache in the expected location
-          gdk-pixbuf-query-loaders --update-cache || true
-
           export NO_STRIP=1
           bun run tauri build --verbose
         env:
