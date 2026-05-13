@@ -24,6 +24,7 @@ describe('Batch Processing Integration', () => {
     });
 
     const metadata: any = {
+      job_type: 'VideoUpload',
       title: 'Video for {{name}}',
       description: 'Desc',
       privacyStatus: 'private',
@@ -38,9 +39,23 @@ describe('Batch Processing Integration', () => {
       subDetails: { name: 'UserA' },
       thumbnailUrl: Option.none(),
       scheduledStartTime: Option.none(),
+      scheduledEndTime: Option.none(),
       publishAt: Option.none(),
       recordingDate: Option.none(),
       language: Option.none(),
+      defaultLanguage: Option.none(),
+      defaultAudioLanguage: Option.none(),
+      latencyPreference: Option.none(),
+      enableAutoStart: Option.none(),
+      enableAutoStop: Option.none(),
+      enableDvr: Option.none(),
+      enableContentEncryption: Option.none(),
+      startWithLowLatency: Option.none(),
+      recordFromStart: Option.none(),
+      enableMonitorStream: Option.none(),
+      broadcastStreamDelayMs: Option.none(),
+      projection: Option.none(),
+      localizations: Option.none(),
     };
 
     const batch: any = {

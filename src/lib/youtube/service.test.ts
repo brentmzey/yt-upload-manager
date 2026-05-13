@@ -10,6 +10,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 describe('YouTubeService', () => {
   const metadata: any = {
+    job_type: 'VideoUpload',
     title: 'Test Video',
     description: 'Test Desc',
     privacyStatus: 'private',

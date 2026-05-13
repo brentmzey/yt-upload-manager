@@ -62,6 +62,7 @@ describe('PocketBase Service Integration', () => {
         batch_id: batch.id,
         title: 'Integration Test Video',
         status: 'idle',
+        job_type: 'VideoUpload',
         sort_order: 1,
         privacyStatus: 'public'
       }));

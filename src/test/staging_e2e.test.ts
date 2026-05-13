@@ -54,6 +54,7 @@ describe('E2E Staging & Compression Flow', () => {
 
     // 2. Prepare Metadata
     const metadata: any = {
+      job_type: 'VideoUpload',
       title: 'Compressed Video',
       description: 'This is a description.',
       privacyStatus: 'private',
