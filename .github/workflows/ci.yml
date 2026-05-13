@@ -165,10 +165,19 @@ jobs:
           # Arch Linux specific fix for gdk-pixbuf directory structure expected by linuxdeploy-plugin-gtk
           EXPECTED_DIR="/usr/lib/gdk-pixbuf-2.0/2.10.0"
           
-          echo "🔍 Querying pacman for gdk-pixbuf2 file list..."
-          # Find the loaders directory from the package file list
-          FOUND_DIR=$(pacman -Ql gdk-pixbuf2 | grep "/loaders/$" | head -n 1 | awk '{print $2}' | xargs dirname)
+          echo "🔍 Locating GDK Pixbuf loaders..."
+          # Strategy 1: pkg-config
+          FOUND_DIR=$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0 2>/dev/null || echo "")
           
+          # Strategy 2: Absolute file search if pkg-config fails
+          if [ -z "$FOUND_DIR" ]; then
+            echo "⚠️  pkg-config failed, searching for libpixbufloader-png.so..."
+            LOADER_PATH=$(find /usr/lib -name "libpixbufloader-png.so" | head -n 1)
+            if [ -n "$LOADER_PATH" ]; then
+              FOUND_DIR=$(dirname $(dirname "$LOADER_PATH"))
+            fi
+          fi
+
           if [ -n "$FOUND_DIR" ] && [ -d "$FOUND_DIR" ]; then
             echo "✅ Found GDK Pixbuf dir at $FOUND_DIR"
             if [ "$FOUND_DIR" != "$EXPECTED_DIR" ]; then
@@ -177,17 +186,12 @@ jobs:
               ln -sf "$FOUND_DIR" "$EXPECTED_DIR"
             fi
           else
-            echo "⚠️  Could not find via pacman, searching /usr/lib..."
-            FOUND_DIR=$(find /usr/lib -type d -name "2.10.0" | grep gdk-pixbuf | head -n 1)
-            if [ -n "$FOUND_DIR" ]; then
-              echo "✅ Found via find: $FOUND_DIR"
-              mkdir -p $(dirname "$EXPECTED_DIR")
-              ln -sf "$FOUND_DIR" "$EXPECTED_DIR"
-            else
-               echo "❌ CRITICAL: GDK Pixbuf dir not found! Listing /usr/lib/gdk*:"
-               ls -d /usr/lib/gdk* 2>/dev/null || echo "None found"
-            fi
+            echo "❌ CRITICAL: GDK Pixbuf loaders not found! Scanning /usr/lib/gdk* as fallback..."
+            ls -R /usr/lib/gdk* || true
           fi
+
+          # Force query loaders to generate a fresh cache in the expected location
+          gdk-pixbuf-query-loaders --update-cache || true
 
           export NO_STRIP=1
           bun run tauri build --verbose
