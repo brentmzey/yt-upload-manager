@@ -104,9 +104,12 @@ export const createPocketBaseServiceLive = (url: string) => {
         }),
       saveStagedVideo: (video) =>
         Effect.tryPromise({
-          try: () => video.id 
-            ? pb.collection('s_staged_videos').update(video.id, video)
-            : pb.collection('s_staged_videos').create(video),
+          try: () => {
+            console.log("DEBUG: PocketBase.saveStagedVideo sending:", JSON.stringify(video));
+            return video.id 
+              ? pb.collection('s_staged_videos').update(video.id, video)
+              : pb.collection('s_staged_videos').create(video);
+          },
           catch: (error) => new PocketBaseError(error),
         }),
       deleteStagedVideo: (id) =>
