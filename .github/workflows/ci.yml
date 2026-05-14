@@ -258,9 +258,9 @@ jobs:
           export NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
           # Initialize Android non-interactively
           if [ ! -d "src-tauri/gen/android" ]; then
-            bun run tauri android init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager"
+            bun run tauri android init --ci
           fi
-          bun run tauri android build --verbose --no-bundle
+          bun run tauri android build --verbose --apk --ci
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
@@ -295,10 +295,9 @@ jobs:
         run: |
           # Initialize iOS if not present
           if [ ! -d "src-tauri/gen/apple" ]; then
-            # Tauri 2.0 CLI might need specific flags for non-interactive init
-            bun run tauri ios init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager" || true
+            bun run tauri ios init --ci
           fi
-          bun run tauri ios build --verbose --no-bundle
+          bun run tauri ios build --verbose --ci
 
       - name: Upload iOS Artifacts
         uses: actions/upload-artifact@v4
