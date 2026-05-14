@@ -1,0 +1,25 @@
+# Use a slim Debian image for the runtime
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libwebkit2gtk-4.1-0 \
+    libappindicator3-1 \
+    librsvg2-2 \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV APP_MODE=server
+ENV PORT=3000
+ENV YT_DUMMY_MODE=false
+
+# Copy the binary from the build context (assumes it's built locally or downloaded)
+COPY yt-backend-server-linux /usr/local/bin/yt-backend-server
+
+# Expose the port
+EXPOSE 3000
+
+# Run the server
+CMD ["yt-backend-server"]

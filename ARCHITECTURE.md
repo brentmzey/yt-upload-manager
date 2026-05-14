@@ -18,6 +18,18 @@ This application is designed to be highly portable, running as a Desktop app, Mo
   - `POST /api/jobs`: Queue a YouTube upload/broadcast job.
 - **Deployment**: Ideal for Docker or VPS environments where a central logic node is needed.
 
+#### Running with Docker
+A `Dockerfile.server` is provided to run the backend in a containerized environment.
+1. Build the server binary (or download from GitHub Releases).
+2. Build the image:
+   ```bash
+   docker build -t yt-backend-server -f Dockerfile.server .
+   ```
+3. Run the container:
+   ```bash
+   docker run -p 3000:3000 -e YT_DUMMY_MODE=false yt-backend-server
+   ```
+
 ### 3. Mobile (iOS & Android)
 - **Built with**: Tauri Mobile.
 - **Deployment**: Produced as `.apk` (Android) and `.app` (iOS) in CI/CD.
