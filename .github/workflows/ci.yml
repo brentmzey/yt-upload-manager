@@ -17,7 +17,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: JavaScript Dependency Audit
+        run: bun pm scan
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Rust Dependency Audit
+        run: |
+          cd src-tauri
+          cargo audit
+
   test-and-build:
+    needs: security-scan
     timeout-minutes: 45
     strategy:
       fail-fast: false
