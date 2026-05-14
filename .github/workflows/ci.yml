@@ -146,7 +146,7 @@ jobs:
           path: src-tauri/target/release/bundle/appimage/*.AppImage
 
   publish-release:
-    needs: [test-and-build, build-arch-linux]
+    needs: [test-and-build, build-arch-linux, build-android, build-ios, build-backend-server]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development'
     steps:
@@ -158,6 +158,20 @@ jobs:
         with:
           path: artifacts
           pattern: desktop-binaries-*
+          merge-multiple: true
+
+      - name: Download mobile artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/mobile
+          pattern: mobile-binaries-*
+          merge-multiple: true
+
+      - name: Download backend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/backend
+          pattern: backend-binaries-*
           merge-multiple: true
 
       - name: List Artifacts
@@ -173,11 +187,125 @@ jobs:
             artifacts/**/*.deb
             artifacts/**/*.rpm
             artifacts/**/*.AppImage
+            artifacts/**/*.apk
+            artifacts/**/*.aab
+            artifacts/**/*.ipa
+            artifacts/backend/*
           draft: true
           prerelease: false
           tag_name: app-v0.1.0-${{ github.run_number }}
           name: 'App Build ${{ github.run_number }}'
-          body: 'Automated release containing the latest cross-platform binaries.'
+          body: 'Automated release containing cross-platform binaries (Desktop, Mobile, Server).'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager "ndk;26.1.10909125"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Android App
+        env:
+          NDK_HOME: ${{ steps.setup-android.outputs.sdk-path }}/ndk/26.1.10909125
+        run: |
+          # Initialize Android if not present
+          if [ ! -d "src-tauri/gen/android" ]; then
+            bun run tauri android init
+          fi
+          bun run tauri android build --verbose
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-binaries-android
+          path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build iOS App
+        run: |
+          # Initialize iOS if not present
+          if [ ! -d "src-tauri/gen/apple" ]; then
+            bun run tauri ios init
+          fi
+          bun run tauri ios build --verbose --no-bundle
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-binaries-ios
+          path: src-tauri/gen/apple/build/Release-iphoneos/*.app
+
+  build-backend-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Standalone Backend
+        run: |
+          cd src-tauri
+          cargo build --release --bin app
+          mv target/release/app ../yt-backend-server-linux
+
+      - name: Upload Backend Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binaries-linux
+          path: yt-backend-server-linux
  
