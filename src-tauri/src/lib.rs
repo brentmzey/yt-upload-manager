@@ -9,6 +9,14 @@ use thiserror::Error;
 use log::{info, debug, trace, error};
 use std::io::Read;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use axum::{
+    routing::{get, post},
+    Json, Router,
+    extract::State as AxumState,
+};
+use tower_http::cors::{Any, CorsLayer};
+
+// --- Errors ---
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -22,22 +30,6 @@ pub enum AppError {
     Internal(String),
 }
 
-/**
- * Utility to decompress Brotli data encoded in Base64.
- * Ensures the Backend can read "last-moment" compressed data from the UI or DB.
- */
-fn decompress_brotli_b64(encoded: &str) -> Result<String, AppError> {
-    let compressed_data = BASE64.decode(encoded)
-        .map_err(|e| AppError::DecompressionError(format!("Base64 decode failed: {}", e)))?;
-    
-    let mut reader = brotli::Decompressor::new(&compressed_data[..], 4096);
-    let mut decompressed = String::new();
-    reader.read_to_string(&mut decompressed)
-        .map_err(|e| AppError::DecompressionError(format!("Brotli decompress failed: {}", e)))?;
-    
-    Ok(decompressed)
-}
-
 impl Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -48,6 +40,8 @@ impl Serialize for AppError {
 }
 
 type AppResult<T> = Result<T, AppError>;
+
+// --- Domain Models ---
 
 #[derive(Serialize, Deserialize, TS, Debug, Clone, PartialEq)]
 #[ts(export, export_to = "../../src/bindings/youtube_types.ts")]
@@ -128,8 +122,6 @@ pub struct SystemStatus {
 // --- YouTube Client Logic ---
 
 pub struct YouTubeClient {
-    // In a real app, this would hold the initialized Hub. 
-    // We omit the exact type here to avoid complex generic bounds.
     pub is_initialized: Mutex<bool>,
 }
 
@@ -140,42 +132,30 @@ impl YouTubeClient {
 
     pub async fn create_broadcast(&self, payload: &VideoMetadataPayload) -> AppResult<String> {
         info!("🎬 [YouTube API] Constructing LiveBroadcast for: {}", payload.title);
-        
         let mut broadcast = google_youtube3::api::LiveBroadcast::default();
-        
-        // Snippet
         let mut snippet = google_youtube3::api::LiveBroadcastSnippet::default();
         snippet.title = Some(payload.title.clone());
         snippet.description = Some(payload.description.clone());
-        
         if let Some(ref time_str) = payload.scheduled_start_time {
             if let Ok(dt) = time_str.parse::<chrono::DateTime<chrono::Utc>>() {
                 snippet.scheduled_start_time = Some(dt);
             }
         }
         broadcast.snippet = Some(snippet);
-
-        // Status
         let mut status = google_youtube3::api::LiveBroadcastStatus::default();
         status.privacy_status = Some(payload.privacy_status.clone());
         broadcast.status = Some(status);
-
-        // Content Details
         let mut content_details = google_youtube3::api::LiveBroadcastContentDetails::default();
         content_details.enable_dvr = payload.enable_dvr;
         content_details.enable_content_encryption = payload.enable_content_encryption;
         broadcast.content_details = Some(content_details);
-
         debug!("Broadcast resource prepared: {:?}", broadcast);
-
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        
         Ok(format!("live_id_{}", rand::random::<u32>()))
     }
 
     pub async fn upload_video(&self, payload: &VideoMetadataPayload) -> AppResult<String> {
         info!("🎬 [YouTube API] Initializing Resumable Video Upload for: {}", payload.title);
-        
         let mut video = google_youtube3::api::Video::default();
         let mut snippet = google_youtube3::api::VideoSnippet::default();
         snippet.title = Some(payload.title.clone());
@@ -183,16 +163,12 @@ impl YouTubeClient {
         snippet.tags = Some(payload.tags.clone());
         snippet.category_id = Some(payload.category_id.clone());
         video.snippet = Some(snippet);
-
         let mut status = google_youtube3::api::VideoStatus::default();
         status.privacy_status = Some(payload.privacy_status.clone());
         status.license = Some(payload.license.clone());
         video.status = Some(status);
-
         debug!("Video resource prepared: {:?}", video);
-        
         tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
-
         Ok(format!("video_id_{}", rand::random::<u32>()))
     }
 }
@@ -209,18 +185,15 @@ pub struct AppState {
 
 // --- Background Worker ---
 
-async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, active_jobs: Arc<Mutex<u32>>, app_handle: tauri::AppHandle) {
+async fn start_background_worker(
+    mut rx: mpsc::Receiver<VideoMetadataPayload>, 
+    active_jobs: Arc<Mutex<u32>>, 
+    concurrency_limit: Arc<tokio::sync::Semaphore>,
+    youtube: Arc<YouTubeClient>,
+    app_handle: Option<tauri::AppHandle>
+) {
     debug!("Background worker started");
-    
-    // Check for dummy mode via environment variable
     let dummy_mode = std::env::var("YT_DUMMY_MODE").map(|v| v == "true").unwrap_or(false);
-    if dummy_mode {
-        info!("Rust Worker: RUNNING IN DUMMY MODE (Simulated latency & failures enabled)");
-    }
-
-    let state = app_handle.state::<AppState>();
-    let semaphore = Arc::clone(&state.concurrency_limit);
-    let yt_client = Arc::clone(&state.youtube);
 
     while let Some(payload) = rx.recv().await {
         {
@@ -235,27 +208,15 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
             YouTubeJobType::LiveBroadcast => "LiveBroadcast",
         };
         
-        // --- HUMAN READABLE LOGGING USING HINTS ---
-        let display_desc = if payload.compressed_fields.contains(&"description".to_string()) || payload.is_compressed.unwrap_or(false) {
-            decompress_brotli_b64(&payload.description).unwrap_or_else(|e| format!("[Decompression Failed: {:?}]", e))
-        } else {
-            payload.description.clone()
-        };
-
-        info!("Rust Worker: Starting {} job for {} (Desc Length: {} chars)", job_type_label, payload.title, display_desc.len());
-        trace!("Decompressed Description: {}", display_desc);
+        info!("Rust Worker: Queueing {} job for {}", job_type_label, payload.title);
         
-        // Simulate long-running task
         let job_active_jobs = Arc::clone(&active_jobs);
         let job_payload = payload.clone();
         let job_handle = app_handle.clone();
-        let job_semaphore = Arc::clone(&semaphore);
-        let job_yt = Arc::clone(&yt_client);
+        let job_semaphore = Arc::clone(&concurrency_limit);
+        let job_yt = Arc::clone(&youtube);
 
-        tauri::async_runtime::spawn(async move {
-            debug!("Task spawned for {}: {}. Waiting for concurrency permit...", job_type_label, job_payload.title);
-            
-            // Acquire concurrency permit
+        tokio::spawn(async move {
             let _permit = match job_semaphore.acquire().await {
                 Ok(p) => p,
                 Err(e) => {
@@ -264,125 +225,132 @@ async fn start_background_worker(mut rx: mpsc::Receiver<VideoMetadataPayload>, a
                 }
             };
 
-            info!("Permit acquired for {}: {}. Starting execution.", job_type_label, job_payload.title);
+            info!("Starting execution of {} for {}", job_type_label, job_payload.title);
 
-            if dummy_mode {
-                // Generate latency before any RNG is held across awaits
+            let result = if dummy_mode {
                 let secs = rand::random_range(2..7);
                 tokio::time::sleep(tokio::time::Duration::from_secs(secs)).await;
-
-                // Generate failure boolean without holding RNG across awaits
                 if rand::random_bool(0.05) {
-                    error!("DUMMY MODE: Simulated random failure for {}", job_payload.title);
-                    job_handle.emit("job-completed", BatchJobResponse {
-                        video_id: "error".to_string(),
-                        status: "Failed: Simulated Quota Error".to_string(),
-                    }).unwrap_or_default();
+                    Err(AppError::Internal("Simulated Quota Error".to_string()))
                 } else {
-                    let fake_id = format!("dummy_yt_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis());
-                    info!("DUMMY MODE: Completed {} for {} -> ID: {}", job_type_label, job_payload.title, fake_id);
-                    job_handle.emit("job-completed", BatchJobResponse {
-                        video_id: fake_id,
-                        status: "Success".to_string(),
-                    }).unwrap_or_default();
+                    Ok(format!("dummy_yt_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()))
                 }
             } else {
-                // --- REAL YOUTUBE API INTEGRATION LOGIC ---
-                debug!("Fetching and decompressing OAuth credentials for channel: {}", job_payload.channel_id);
-                
-                let result = match job_payload.job_type {
+                match job_payload.job_type {
                     YouTubeJobType::VideoUpload => job_yt.upload_video(&job_payload).await,
                     YouTubeJobType::LiveBroadcast => job_yt.create_broadcast(&job_payload).await,
-                };
+                }
+            };
 
-                match result {
-                    Ok(id) => {
-                        info!("Successfully completed {} for {}", job_type_label, job_payload.title);
-                        job_handle.emit("job-completed", BatchJobResponse {
-                            video_id: id,
-                            status: "Success".to_string(),
-                        }).unwrap_or_default();
-                    },
-                    Err(e) => {
-                        error!("Failed {} for {}: {:?}", job_type_label, job_payload.title, e);
-                        job_handle.emit("job-completed", BatchJobResponse {
-                            video_id: "error".to_string(),
-                            status: format!("Failed: {}", e),
-                        }).unwrap_or_default();
+            match result {
+                Ok(id) => {
+                    info!("Successfully completed {} for {}", job_type_label, job_payload.title);
+                    if let Some(handle) = job_handle {
+                        let _ = handle.emit("job-completed", BatchJobResponse { video_id: id, status: "Success".to_string() });
+                    }
+                },
+                Err(e) => {
+                    error!("Failed {} for {}: {:?}", job_type_label, job_payload.title, e);
+                    if let Some(handle) = job_handle {
+                        let _ = handle.emit("job-completed", BatchJobResponse { video_id: "error".to_string(), status: format!("Failed: {}", e) });
                     }
                 }
             }
             
             match job_active_jobs.lock() {
-                Ok(mut count) => {
-                    if *count > 0 {
-                        *count -= 1;
-                    }
-                }
+                Ok(mut count) => { if *count > 0 { *count -= 1; } }
                 Err(e) => error!("Failed to lock active_jobs in task: {}", e),
             }
         });
     }
-    info!("Background worker shutting down");
 }
 
-// --- Commands ---
+// --- Axum Handlers (Headless Server) ---
+
+async fn get_status_handler(AxumState(state): AxumState<Arc<AppState>>) -> Json<SystemStatus> {
+    let mut sys = state.system.lock().unwrap();
+    sys.refresh_all();
+    Json(SystemStatus {
+        cpu_usage: sys.global_cpu_usage(),
+        memory_usage: sys.used_memory(),
+        active_jobs: *state.active_jobs.lock().unwrap(),
+        uptime: System::uptime(),
+    })
+}
+
+async fn start_job_handler(
+    AxumState(state): AxumState<Arc<AppState>>,
+    Json(payload): Json<VideoMetadataPayload>,
+) -> Json<BatchJobResponse> {
+    let _ = state.job_tx.send(payload).await;
+    Json(BatchJobResponse { video_id: "queued".to_string(), status: "Processing".to_string() })
+}
+
+// --- Entry Points ---
+
+pub async fn run_server(port: u16) {
+    info!("🚀 Starting Standalone Backend Server on port {}...", port);
+    let (tx, rx) = mpsc::channel(100);
+    let active_jobs = Arc::new(Mutex::new(0));
+    let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3));
+    let youtube = Arc::new(YouTubeClient::new());
+    
+    let mut system = System::new_all();
+    system.refresh_all();
+
+    let state = Arc::new(AppState {
+        system: Mutex::new(system),
+        active_jobs: Arc::clone(&active_jobs),
+        job_tx: tx,
+        concurrency_limit: Arc::clone(&concurrency_limit),
+        youtube: Arc::clone(&youtube),
+    });
+
+    // Start worker without Tauri handle
+    let worker_active_jobs = Arc::clone(&active_jobs);
+    let worker_concurrency = Arc::clone(&concurrency_limit);
+    let worker_yt = Arc::clone(&youtube);
+    tokio::spawn(async move {
+        start_background_worker(rx, worker_active_jobs, worker_concurrency, worker_yt, None).await;
+    });
+
+    let app = Router::new()
+        .route("/api/status", get("/api/status", get_status_handler))
+        .route("/api/jobs", post("/api/jobs", start_job_handler))
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
 
 mod commands {
     use super::*;
 
     #[tauri::command]
     pub async fn get_system_status(state: State<'_, AppState>) -> AppResult<SystemStatus> {
-        trace!("Handling get_system_status command");
         let mut sys = state.system.lock().map_err(|e| AppError::LockError(e.to_string()))?;
-        
-        // Refresh specific metrics
-        sys.refresh_cpu_all();
-        sys.refresh_memory();
-
-        let cpu_usage = sys.global_cpu_usage();
-        let memory_usage = sys.used_memory();
-        let uptime = System::uptime();
-        let active_jobs = *state.active_jobs.lock().map_err(|e| AppError::LockError(e.to_string()))?;
-
-        debug!("System status: CPU {}%, MEM {}KB, Jobs {}, Uptime {}s", cpu_usage, memory_usage, active_jobs, uptime);
-
+        sys.refresh_all();
         Ok(SystemStatus {
-            cpu_usage,
-            memory_usage,
-            active_jobs,
-            uptime,
+            cpu_usage: sys.global_cpu_usage(),
+            memory_usage: sys.used_memory(),
+            active_jobs: *state.active_jobs.lock().map_err(|e| AppError::LockError(e.to_string()))?,
+            uptime: System::uptime(),
         })
     }
 
     #[tauri::command]
-    pub async fn start_youtube_upload_job(
-        payload: VideoMetadataPayload,
-        state: State<'_, AppState>
-    ) -> AppResult<BatchJobResponse> {
-        info!("Backend: Queueing upload for {}", payload.title);
-        debug!("Payload: {:?}", payload);
-        
+    pub async fn start_youtube_upload_job(payload: VideoMetadataPayload, state: State<'_, AppState>) -> AppResult<BatchJobResponse> {
         state.job_tx.send(payload).await.map_err(|e| AppError::QueueError(e.to_string()))?;
-
-        Ok(BatchJobResponse {
-            video_id: "queued".to_string(),
-            status: "Processing".to_string(),
-        })
+        Ok(BatchJobResponse { video_id: "queued".to_string(), status: "Processing".to_string() })
     }
 
     #[tauri::command]
-    pub async fn get_youtube_video_details(
-        video_id: String,
-        _state: State<'_, AppState>
-    ) -> AppResult<YouTubeVideoDetails> {
-        info!("Backend: Fetching details for video ID {}", video_id);
-        
-        // Mocking YouTube Data API response for now
+    pub async fn get_youtube_video_details(video_id: String, _state: State<'_, AppState>) -> AppResult<YouTubeVideoDetails> {
         Ok(YouTubeVideoDetails {
             id: video_id.clone(),
-            title: format!("Mock YouTube Title for {}", video_id),
-            description: "This is a dummy description fetched from the mock YouTube API.".to_string(),
+            title: format!("Mock Title for {}", video_id),
+            description: "Dummy description".to_string(),
             thumbnail_url: Some("https://picsum.photos/640/360".to_string()),
             privacy_status: "private".to_string(),
             view_count: Some(0),
@@ -391,38 +359,34 @@ mod commands {
     }
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run_tauri() {
     let (tx, rx) = mpsc::channel(100);
     let active_jobs = Arc::new(Mutex::new(0));
     let active_jobs_clone = Arc::clone(&active_jobs);
-    let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3)); // Max 3 concurrent uploads
+    let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3));
     let youtube = Arc::new(YouTubeClient::new());
 
     let mut system = System::new_all();
     system.refresh_all();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Trace)
-            .build())
+        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Trace).build())
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            
-            // Manage State FIRST so worker can access it via app_handle.state()
             app.manage(AppState {
                 system: Mutex::new(system),
                 active_jobs,
                 job_tx: tx,
-                concurrency_limit,
-                youtube,
+                concurrency_limit: Arc::clone(&concurrency_limit),
+                youtube: Arc::clone(&youtube),
             });
 
-            // Start background worker using Tauri's async runtime
+            let worker_active_jobs = Arc::clone(&active_jobs_clone);
+            let worker_concurrency = Arc::clone(&concurrency_limit);
+            let worker_yt = Arc::clone(&youtube);
             tauri::async_runtime::spawn(async move {
-                start_background_worker(rx, active_jobs_clone, app_handle).await;
+                start_background_worker(rx, worker_active_jobs, worker_concurrency, worker_yt, Some(app_handle)).await;
             });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -432,6 +396,10 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+pub fn run() {
+    run_tauri();
 }
 
 #[cfg(test)]
