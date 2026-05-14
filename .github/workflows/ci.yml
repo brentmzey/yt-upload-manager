@@ -5,6 +5,7 @@ on:
     branches: [ main, development, 'feature/**' ]
   pull_request:
     branches: [ main, development, 'feature/**' ]
+  workflow_dispatch:
 
 # Required to create releases
 permissions:
@@ -148,7 +149,7 @@ jobs:
   publish-release:
     needs: [test-and-build, build-arch-linux, build-android, build-ios, build-backend-server]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development'
+    if: always() && !cancelled()
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -179,6 +180,7 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        if: contains(needs.*.result, 'success')
         with:
           files: |
             artifacts/**/*.exe
@@ -191,11 +193,12 @@ jobs:
             artifacts/**/*.aab
             artifacts/**/*.ipa
             artifacts/backend/*
-          draft: true
+          draft: false
           prerelease: false
-          tag_name: app-v0.1.0-${{ github.run_number }}
-          name: 'App Build ${{ github.run_number }}'
-          body: 'Automated release containing cross-platform binaries (Desktop, Mobile, Server).'
+          generate_release_notes: true
+          tag_name: build-v0.1.0-rev${{ github.run_number }}
+          name: 'Public Build Revision ${{ github.run_number }}'
+          body: 'Consolidated artifacts for all facets: Desktop, Mobile, and Standalone Server.'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -214,6 +217,7 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        id: setup-android
 
       - name: Install Android NDK
         run: sdkmanager "ndk;26.1.10909125"
@@ -238,11 +242,11 @@ jobs:
         env:
           NDK_HOME: ${{ steps.setup-android.outputs.sdk-path }}/ndk/26.1.10909125
         run: |
-          # Initialize Android if not present
+          # Initialize Android non-interactively
           if [ ! -d "src-tauri/gen/android" ]; then
-            bun run tauri android init
+            bun run tauri android init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager"
           fi
-          bun run tauri android build --verbose
+          bun run tauri android build --verbose --no-bundle
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
@@ -277,7 +281,7 @@ jobs:
         run: |
           # Initialize iOS if not present
           if [ ! -d "src-tauri/gen/apple" ]; then
-            bun run tauri ios init
+            bun run tauri ios init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager"
           fi
           bun run tauri ios build --verbose --no-bundle
 
