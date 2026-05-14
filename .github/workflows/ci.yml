@@ -149,56 +149,71 @@ jobs:
   publish-release:
     needs: [test-and-build, build-arch-linux, build-android, build-ios, build-backend-server]
     runs-on: ubuntu-latest
-    if: always() && !cancelled()
+    if: always() && !cancelled() && (needs.test-and-build.result == 'success' || needs.build-backend-server.result == 'success')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Create Artifact Directory
+        run: mkdir -p artifacts-to-publish
+
+      - name: Download Desktop Artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          path: artifacts
+          path: artifacts-to-publish
           pattern: desktop-binaries-*
           merge-multiple: true
 
-      - name: Download mobile artifacts
+      - name: Download Mobile Artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          path: artifacts/mobile
+          path: artifacts-to-publish/mobile
           pattern: mobile-binaries-*
           merge-multiple: true
 
-      - name: Download backend artifacts
+      - name: Download Backend Artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          path: artifacts/backend
+          path: artifacts-to-publish/backend
           pattern: backend-binaries-*
           merge-multiple: true
 
-      - name: List Artifacts
-        run: ls -R artifacts
+      - name: List Artifacts for Debugging
+        run: ls -R artifacts-to-publish
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: contains(needs.*.result, 'success')
         with:
           files: |
-            artifacts/**/*.exe
-            artifacts/**/*.msi
-            artifacts/**/*.dmg
-            artifacts/**/*.deb
-            artifacts/**/*.rpm
-            artifacts/**/*.AppImage
-            artifacts/**/*.apk
-            artifacts/**/*.aab
-            artifacts/**/*.ipa
-            artifacts/backend/*
+            artifacts-to-publish/**/*.exe
+            artifacts-to-publish/**/*.msi
+            artifacts-to-publish/**/*.dmg
+            artifacts-to-publish/**/*.deb
+            artifacts-to-publish/**/*.rpm
+            artifacts-to-publish/**/*.AppImage
+            artifacts-to-publish/**/*.apk
+            artifacts-to-publish/**/*.aab
+            artifacts-to-publish/**/*.ipa
+            artifacts-to-publish/backend/*
+            artifacts-to-publish/yt-backend-server-linux
           draft: false
           prerelease: false
           generate_release_notes: true
-          tag_name: build-v0.1.0-rev${{ github.run_number }}
-          name: 'Public Build Revision ${{ github.run_number }}'
-          body: 'Consolidated artifacts for all facets: Desktop, Mobile, and Standalone Server.'
+          tag_name: v0.1.0-build-${{ github.run_number }}
+          name: 'Release Build ${{ github.run_number }}'
+          body: |
+            ## Automated Multi-Facet Build
+            This release contains artifacts from the latest CI/CD run.
+            
+            ### Included Facets:
+            - **Desktop**: Windows, macOS, Linux (AppImage/Deb/Rpm)
+            - **Server**: Standalone Linux Backend
+            - **Mobile**: Android (APK) and iOS (if successful)
+            
+            *Note: Some artifacts may be missing if specific platform builds encountered issues.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
