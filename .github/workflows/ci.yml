@@ -239,9 +239,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build Android App
-        env:
-          NDK_HOME: ${{ steps.setup-android.outputs.sdk-path }}/ndk/26.1.10909125
         run: |
+          export NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
           # Initialize Android non-interactively
           if [ ! -d "src-tauri/gen/android" ]; then
             bun run tauri android init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager"
@@ -281,7 +280,8 @@ jobs:
         run: |
           # Initialize iOS if not present
           if [ ! -d "src-tauri/gen/apple" ]; then
-            bun run tauri ios init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager"
+            # Tauri 2.0 CLI might need specific flags for non-interactive init
+            bun run tauri ios init --app-name "YouTubeManager" --bundle-identifier "com.yt.manager" || true
           fi
           bun run tauri ios build --verbose --no-bundle
 
