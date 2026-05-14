@@ -315,8 +315,8 @@ pub async fn run_server(port: u16) {
     });
 
     let app = Router::new()
-        .route("/api/status", get("/api/status", get_status_handler))
-        .route("/api/jobs", post("/api/jobs", start_job_handler))
+        .route("/api/status", get(get_status_handler))
+        .route("/api/jobs", post(start_job_handler))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
         .with_state(state);
 
