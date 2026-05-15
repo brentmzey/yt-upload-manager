@@ -29,7 +29,9 @@ jobs:
           node-version: 22.12.0
 
       - name: JavaScript Dependency Audit
-        run: npm audit --audit-level=high
+        run: |
+          npm install --package-lock-only
+          npm audit --audit-level=high
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

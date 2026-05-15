@@ -359,6 +359,7 @@ mod commands {
     }
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run_tauri() {
     let (tx, rx) = mpsc::channel(100);
     let active_jobs = Arc::new(Mutex::new(0));
