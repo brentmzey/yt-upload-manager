@@ -73,6 +73,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Initialize Rustup (Fix for macOS cargo metadata bug)
+        run: rustup default stable
+
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
 
@@ -87,6 +90,9 @@ jobs:
 
       - name: Setup Just
         uses: extractions/setup-just@v2
+
+      - name: Check Environment
+        run: just check-env
 
       - name: Run Unit Tests
         run: just test
@@ -319,12 +325,25 @@ jobs:
         with:
           targets: aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim
 
+      - name: Initialize Rustup
+        run: rustup default stable
+
+      - name: Setup Just
+        uses: extractions/setup-just@v2
+
+      - name: Check Environment
+        run: just check-env
+
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
       - name: Build iOS App
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM || '0000000000' }}
+          CODE_SIGNING_ALLOWED: NO
+          CODE_SIGNING_REQUIRED: NO
+          CODE_SIGN_IDENTITY: ""
+          CODE_SIGN_ENTITLEMENTS: ""
         run: |
           # Initialize iOS if not present
           if [ ! -d "src-tauri/gen/apple" ]; then
