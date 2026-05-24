@@ -173,6 +173,31 @@ impl YouTubeClient {
     }
 }
 
+pub fn decompress_brotli_b64(encoded: &str) -> AppResult<String> {
+    let compressed = BASE64.decode(encoded)
+        .map_err(|e| AppError::DecompressionError(format!("Base64 decode failed: {}", e)))?;
+    
+    let mut decompressed = Vec::new();
+    let mut reader = brotli::Decompressor::new(compressed.as_slice(), 4096);
+    reader.read_to_end(&mut decompressed)
+        .map_err(|e| AppError::DecompressionError(format!("Brotli decompress failed: {}", e)))?;
+    
+    String::from_utf8(decompressed)
+        .map_err(|e| AppError::DecompressionError(format!("UTF-8 decode failed: {}", e)))
+}
+
+pub fn decompress_payload(payload: &mut VideoMetadataPayload) -> AppResult<()> {
+    if let Some(true) = payload.is_compressed {
+        for field in &payload.compressed_fields {
+            if field == "description" {
+                info!("Decompressing field '{}' for job: {}", field, payload.title);
+                payload.description = decompress_brotli_b64(&payload.description)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 // --- App State ---
 
 pub struct AppState {
@@ -227,18 +252,24 @@ async fn start_background_worker(
 
             info!("Starting execution of {} for {}", job_type_label, job_payload.title);
 
-            let result = if dummy_mode {
-                let secs = rand::random_range(2..7);
-                tokio::time::sleep(tokio::time::Duration::from_secs(secs)).await;
-                if rand::random_bool(0.05) {
-                    Err(AppError::Internal("Simulated Quota Error".to_string()))
-                } else {
-                    Ok(format!("dummy_yt_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()))
-                }
-            } else {
-                match job_payload.job_type {
-                    YouTubeJobType::VideoUpload => job_yt.upload_video(&job_payload).await,
-                    YouTubeJobType::LiveBroadcast => job_yt.create_broadcast(&job_payload).await,
+            let mut decompressed_payload = job_payload.clone();
+            let result = match decompress_payload(&mut decompressed_payload) {
+                Err(e) => Err(e),
+                Ok(()) => {
+                    if dummy_mode {
+                        let secs = rand::random_range(2..7);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(secs)).await;
+                        if rand::random_bool(0.05) {
+                            Err(AppError::Internal("Simulated Quota Error".to_string()))
+                        } else {
+                            Ok(format!("dummy_yt_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()))
+                        }
+                    } else {
+                        match decompressed_payload.job_type {
+                            YouTubeJobType::VideoUpload => job_yt.upload_video(&decompressed_payload).await,
+                            YouTubeJobType::LiveBroadcast => job_yt.create_broadcast(&decompressed_payload).await,
+                        }
+                    }
                 }
             };
 
@@ -523,5 +554,60 @@ mod tests {
     fn test_decompression_failure() {
         let result = decompress_brotli_b64("invalid-base64-!@#$");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_payload_decompression() {
+        use brotli::CompressorReader;
+        use std::io::Read;
+
+        let original_description = "A very long video description that needs compression.";
+        let mut compressor = CompressorReader::new(original_description.as_bytes(), 4096, 3, 20);
+        let mut compressed = Vec::new();
+        compressor.read_to_end(&mut compressed).unwrap();
+        let encoded_description = BASE64.encode(compressed);
+
+        let mut payload = VideoMetadataPayload {
+            job_type: YouTubeJobType::VideoUpload,
+            channel_id: "ch-1".to_string(),
+            title: "Test Video".to_string(),
+            description: encoded_description,
+            privacy_status: "public".to_string(),
+            license: "youtube".to_string(),
+            embeddable: true,
+            public_stats_viewable: true,
+            made_for_kids: false,
+            contains_synthetic_media: false,
+            paid_product_placement: false,
+            tags: vec![],
+            category_id: "22".to_string(),
+            sub_details: std::collections::HashMap::new(),
+            thumbnail_url: None,
+            thumbnail_data_b64: None,
+            scheduled_start_time: None,
+            scheduled_start_time_millis: None,
+            scheduled_end_time: None,
+            publish_at: None,
+            recording_date: None,
+            language: None,
+            default_language: None,
+            default_audio_language: None,
+            latency_preference: None,
+            enable_auto_start: None,
+            enable_auto_stop: None,
+            enable_dvr: None,
+            enable_content_encryption: None,
+            start_with_low_latency: None,
+            record_from_start: None,
+            enable_monitor_stream: None,
+            broadcast_stream_delay_ms: None,
+            projection: None,
+            is_compressed: Some(true),
+            compressed_fields: vec!["description".to_string()],
+        };
+
+        let result = decompress_payload(&mut payload);
+        assert!(result.is_ok());
+        assert_eq!(payload.description, original_description);
     }
 }

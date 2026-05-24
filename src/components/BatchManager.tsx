@@ -293,7 +293,9 @@ export const BatchManager: React.FC = () => {
       const program = PocketBaseService.pipe(
         Effect.flatMap(pb => pb.deleteStagedVideo(task.pbId!))
       );
-      Effect.runSync(Effect.provide(program, AppLayer));
+      Effect.runPromise(Effect.provide(program, AppLayer)).catch(err => {
+        console.error("Failed to delete staged video from database:", err);
+      });
     }
     setTasks(prev => prev.filter(t => t.id !== id));
     if (editingId === id) setEditingId(null);

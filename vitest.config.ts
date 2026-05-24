@@ -30,7 +30,8 @@ export default defineConfig({
       '**/cypress/**',
       '**/.{idea,git,cache,output,temp}/**',
       '**/{karma,rollup,webpack,vite,vitest}.config.*',
-      'src/test/integration_pocketbase.test.ts'
+      'src/test/integration_pocketbase.test.ts',
+      'src/test/bulk_staging_integration.test.ts'
     ],
   },
   resolve: {

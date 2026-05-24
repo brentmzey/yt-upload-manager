@@ -104,23 +104,79 @@ The project uses a **Dynamic Multi-Tenant Bootstrap** architecture:
 - **Dynamic Context**: The frontend bootstraps by hitting the registry and reconfiguring its services to point to the client's dedicated PocketHost instance.
 - **Isomorphic Services**: All logic (YouTube, Compression, Storage) is tenant-agnostic and relies on dynamic Effect-TS Layers.
 
-## 🧪 Testing Strategy
+## 🧪 Testing Strategy & Execution Guide
 
-- **Unit Tests**: Located in `src/**/*.test.ts(x)`, powered by Vitest.
-- **Binding Tests**: Rust tests that ensure the frontend and backend share identical data structures.
-- **Integration**: Handled via Tauri's mock runtime for command testing.
+The project maintains a rigorous, multi-layered quality assurance matrix designed to validate the stability of client databases, the Rust decompression pipeline, and parallel Effect-TS bulk stream processors.
+
+### 1. Backend Decompression Verification (Rust)
+The Rust native backend employs base64-decoded Brotli decompression to unpack compressed payloads (such as large descriptions and channel configurations) seamlessly before executing uploads.
+- **Run Rust Unit & Decompression Tests**:
+  ```bash
+  cd src-tauri && cargo test
+  ```
+  *This compiles and runs the backend tests, validating the Brotli decompression engine (`test_decompression`), baseline decoding integrity, and structured payload decompression (`test_payload_decompression`).*
+
+### 2. Full Integration & Staging Verification (TypeScript/JS)
+Our integration suite boots a real, localized test database instance on port `8091`, provisions database channels, stages stream placeholders in bulk, and asserts end-to-end schema, sort order, and Brotli compression roundtrips.
+- **Run Integration Tests**:
+  ```bash
+  just integration
+  ```
+  *This automatically starts an isolated test PocketBase instance, applies idempotent database migrations, runs our TypeScript integration test suite (`bulk_staging_integration.test.ts`), and shuts down the test database cleanly on completion.*
+
+### 3. Complete Dev & Unit Suite
+- **Run All TypeScript/JS Unit Tests**:
+  ```bash
+  just test
+  ```
+- **Run Full Validation Suite (CI Simulation)**:
+  ```bash
+  just validate
+  ```
+  *This executes the complete lint check, TypeScript compiler validations, unit test suites, and mock environment checks.*
+
+---
+
+## 🚀 Running the Multi-Tenant Stack
+
+To test and run the full stack locally with simulated tenant routing, use this sequential three-terminal workflow:
+
+### Step 1: Boot the Central Registry (Terminal 1)
+Simulates the global lookup registry containing connection coordinates for all tenants:
+```bash
+just main-up
+```
+*Served on `http://127.0.0.1:8080`. Admin console: `admin@yt-manager.com` / `admin123456`.*
+
+### Step 2: Boot the Client Tenant Database (Terminal 2)
+Simulates a dedicated, isolated client tenant database instance:
+```bash
+just up
+```
+*Served on `http://127.0.0.1:8090`. Admin console: `admin@yt-manager.com` / `admin123456`.*
+
+### Step 3: Run Sync & Launch Application (Terminal 3)
+1. **Synchronize Schema**: Align the schema and register the local development tenant:
+   ```bash
+   just sync-tenants
+   ```
+2. **Launch Frontend (Web Mode)**:
+   ```bash
+   just dev
+   ```
+   *Connects automatically to the client tenant database. Browse the app in your browser.*
+3. **Launch Native Desktop (Tauri Mode)**:
+   ```bash
+   just tauri
+   ```
+
+---
 
 ## 📜 Documentation & Standards
 - [YOUTUBE_OAUTH_SETUP.md](./YOUTUBE_OAUTH_SETUP.md) - Step-by-step YouTube API provisioning.
-- [MULTI_TENANT_OPS.md](./MULTI_TENANT_OPS.md) - **(New)** Guide for managing tenants, registry properties, and global sync.
+- [MULTI_TENANT_OPS.md](./MULTI_TENANT_OPS.md) - Guide for managing tenants, registry properties, and global sync.
 - [AGENTS.md](./AGENTS.md) - Engineering standards and security mandates.
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - Guidelines for contributing.
 - [CHANGELOG.md](./CHANGELOG.md) - Project history and updates.
 - [dibr.md](./dibr.md) - Developer Initial Build & Run reference.
 
-## 💻 Local Quickstart
-
-1.  **Enter Env**: `nix develop`
-2.  **Initialize**: `just setup`
-3.  **Start DB**: `just up`
-4.  **Launch App**: `just tauri`
