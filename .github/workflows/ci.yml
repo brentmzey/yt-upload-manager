@@ -353,7 +353,7 @@ jobs:
           # Pre-build web frontend so the Xcode bundle assets are up to date
           bun run build
           # Compile the iOS application directly via xcodebuild targeting the simulator (no Apple developer account or signing required)
-          xcodebuild -scheme app_iOS -workspace src-tauri/gen/apple/app.xcodeproj/project.xcworkspace/ -sdk iphonesimulator -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" CONFIGURATION_BUILD_DIR=src-tauri/gen/apple/build/Release-iphonesimulator build
+          xcodebuild -scheme app_iOS -workspace src-tauri/gen/apple/app.xcodeproj/project.xcworkspace/ -sdk iphonesimulator -configuration Release CODE_SIGN_STYLE=Manual CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" PROVISIONING_PROFILE="" CONFIGURATION_BUILD_DIR=src-tauri/gen/apple/build/Release-iphonesimulator build
 
       - name: Upload iOS Artifacts
         uses: actions/upload-artifact@v4
