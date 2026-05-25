@@ -91,6 +91,43 @@ This repository is fully configured for automated testing and releases via **Git
 - **Web:** Astro compiles a static site/SSR bundle via `npm run build`, which can be easily deployed to Vercel, Netlify, or Cloudflare Pages.
 - **Mobile (iOS/Android):** Code is architected to support Tauri Mobile primitives. You can initialize mobile targets locally using `npx tauri android init` and `npx tauri ios init` and build natively via Android Studio/Xcode or specialized mobile CI runners.
 
+## 📦 Downloading & Installing Releases
+
+You can download pre-compiled production binaries for all major platforms directly from the **GitHub Releases** page. Because these builds are built automatically in our CI/CD pipeline, please follow these instructions to install and run them on your system:
+
+### 🍏 macOS (Desktop)
+1. Download the `.dmg` or `.app` from the Releases page.
+2. Drag `yt-upload-manager.app` into your `/Applications` directory.
+3. **Bypass Gatekeeper (Unsigned Warning):** Since this is an open-source build without a paid Apple Developer certificate, macOS Gatekeeper may show a warning that the app "is damaged" or "cannot be verified". To resolve this:
+   - Right-click (or Control-click) `yt-upload-manager.app` in your Applications folder and select **Open**.
+   - Alternatively, open your terminal and run:
+     ```bash
+     xattr -cr /Applications/yt-upload-manager.app
+     ```
+
+### 🏁 Windows (Desktop)
+1. Download the `.msi` or `.exe` installer.
+2. Run the installer to set up the application.
+3. **SmartScreen Warning:** If Windows SmartScreen blocks launch because of an unrecognized signature, click **More info** followed by **Run anyway**.
+
+### 🐧 Linux (Desktop)
+1. Download the `.AppImage`, `.deb`, or `.rpm` package.
+2. For AppImage:
+   - Make it executable: `chmod +x yt-upload-manager.AppImage`
+   - Run the file to launch the application.
+
+### 🤖 Android (Mobile)
+1. Download the `.apk` file directly on your device.
+2. Tap the downloaded file to install.
+3. If prompted, enable **Install unknown apps** for your browser or file manager.
+
+### 📱 iOS (Simulator Build)
+1. Download `yt-upload-manager-ios-simulator.zip` from the Releases page.
+2. Unzip it to extract `yt-upload-manager.app`.
+3. Open Xcode and launch any iOS Simulator.
+4. **Drag-and-drop** the `yt-upload-manager.app` folder directly onto the running Simulator screen. The app will install instantly and is ready to run!
+   *Note: Because this is a headless CI/CD build compiled without physical developer profiles, this package targets the iOS Simulator and cannot be installed directly on physical iPhones.*
+
 ### CI/CD Flow (On Push/PR):
 1. **Setup:** Initializes Node (Bun) and Rust toolchains across `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 2. **Quality Control:** Runs formatting, type-checking, and `vitest` suites ensuring cross-layer integrity.

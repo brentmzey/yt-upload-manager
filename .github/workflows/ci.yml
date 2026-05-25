@@ -232,6 +232,7 @@ jobs:
             artifacts-to-publish/**/*.apk
             artifacts-to-publish/**/*.aab
             artifacts-to-publish/**/*.ipa
+            artifacts-to-publish/**/*.zip
             artifacts-to-publish/backend/*
             artifacts-to-publish/yt-backend-server-linux
           draft: false
@@ -376,13 +377,16 @@ jobs:
           bun run build
           # Compile the iOS Simulator application using Tauri CLI to ensure the companion WebSocket server is active
           bun run tauri ios build --target aarch64-sim --ci
+          # Zip the simulator .app bundle so it can be uploaded as a file to the GitHub Release
+          cd src-tauri/gen/apple/build/Release-iphonesimulator
+          zip -r yt-upload-manager-ios-simulator.zip yt-upload-manager.app
 
 
       - name: Upload iOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mobile-binaries-ios
-          path: src-tauri/gen/apple/build/*/*.app
+          path: src-tauri/gen/apple/build/Release-iphonesimulator/yt-upload-manager-ios-simulator.zip
 
   build-backend-server:
     runs-on: ubuntu-latest
