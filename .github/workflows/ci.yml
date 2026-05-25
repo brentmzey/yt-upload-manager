@@ -352,6 +352,8 @@ jobs:
           fi
           # Pre-build web frontend so the Xcode bundle assets are up to date
           bun run build
+          # Create dummy dev-server address file to bypass Tauri CLI panic in CI/CD environments
+          echo "http://127.0.0.1:4321" > "${TMPDIR:-/tmp}/com.yt-upload-manager.desktop-server-addr"
           # Compile the iOS application directly via xcodebuild targeting the simulator (no Apple developer account or signing required)
           xcodebuild -quiet -scheme app_iOS -workspace src-tauri/gen/apple/app.xcodeproj/project.xcworkspace/ -sdk iphonesimulator -configuration release CODE_SIGN_STYLE=Manual CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" PROVISIONING_PROFILE="" CONFIGURATION_BUILD_DIR=src-tauri/gen/apple/build/release-iphonesimulator CONFIGURATION=release build
 
