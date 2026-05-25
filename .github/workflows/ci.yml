@@ -357,10 +357,25 @@ jobs:
             # Provide dummy team ID to satisfy init if secret is missing
             bun run tauri ios init --ci
           fi
+          # Disable Xcode code signing directly inside the generated project configuration
+          python3 -c '
+          import os
+          filepath = "src-tauri/gen/apple/app.xcodeproj/project.pbxproj"
+          if os.path.exists(filepath):
+              with open(filepath, "r") as f:
+                  content = f.read()
+              overrides = "\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";"
+              new_content = content.replace("buildSettings = {", "buildSettings = {" + overrides)
+              with open(filepath, "w") as f:
+                  f.write(new_content)
+              print("Successfully disabled code signing in project.pbxproj")
+          else:
+              print("project.pbxproj not found!")
+          '
           # Pre-build web frontend so the Xcode bundle assets are up to date
           bun run build
           # Compile the iOS Simulator application using Tauri CLI to ensure the companion WebSocket server is active
-          bun run tauri ios build --target aarch64-sim --ci -- CODE_SIGN_STYLE=Manual CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PROVISIONING_PROFILE_SPECIFIER="" PROVISIONING_PROFILE="" CONFIGURATION_BUILD_DIR=src-tauri/gen/apple/build/Release-iphonesimulator CONFIGURATION=Release
+          bun run tauri ios build --target aarch64-sim --ci
 
 
       - name: Upload iOS Artifacts
