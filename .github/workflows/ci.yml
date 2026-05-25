@@ -337,6 +337,13 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
+      - name: Configure Local DNS Resolution
+        run: |
+          echo "127.0.0.1 localhost" | sudo tee -a /etc/hosts
+          echo "::1 localhost" | sudo tee -a /etc/hosts
+          echo "127.0.0.1 $(hostname)" | sudo tee -a /etc/hosts
+          echo "::1 $(hostname)" | sudo tee -a /etc/hosts
+
       - name: Build iOS App
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM || '0000000000' }}
