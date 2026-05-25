@@ -350,14 +350,14 @@ jobs:
             # Provide dummy team ID to satisfy init if secret is missing
             bun run tauri ios init --ci
           fi
-          # Attempt to build
-          bun run tauri ios build --verbose --ci
+          # Attempt to build for simulator in CI to bypass Xcode account & provisioning profile requirements
+          bun run tauri ios build --verbose --ci -- -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
 
       - name: Upload iOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mobile-binaries-ios
-          path: src-tauri/gen/apple/build/Release-iphoneos/*.app
+          path: src-tauri/gen/apple/build/Release-*/*.app
 
   build-backend-server:
     runs-on: ubuntu-latest
