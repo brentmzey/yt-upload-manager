@@ -135,9 +135,12 @@ describe('Bulk Staging & Stream Integration Stacking Pipeline', () => {
         processBatch(batchPayload, [], [undefined, undefined, undefined], 'schedule')
       );
 
+      // Convert Chunk to standard array for iteration
+      const batchResultArray = Array.from(batchResult);
+
       // Verify all 3 live streams queued successfully to backend
-      expect(batchResult).toHaveLength(3);
-      batchResult.forEach(res => {
+      expect(batchResultArray).toHaveLength(3);
+      batchResultArray.forEach(res => {
         expect(res).toBe('mock_stream_yt_123');
       });
 
