@@ -233,6 +233,10 @@ jobs:
             artifacts-to-publish/**/*.aab
             artifacts-to-publish/**/*.ipa
             artifacts-to-publish/**/*.zip
+<<<<<<< HEAD
+=======
+            artifacts-to-publish/**/*.tar.gz
+>>>>>>> main
             artifacts-to-publish/backend/*
             artifacts-to-publish/yt-backend-server-linux
           draft: false
