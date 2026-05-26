@@ -232,6 +232,8 @@ jobs:
             artifacts-to-publish/**/*.apk
             artifacts-to-publish/**/*.aab
             artifacts-to-publish/**/*.ipa
+            artifacts-to-publish/**/*.zip
+            artifacts-to-publish/**/*.tar.gz
             artifacts-to-publish/backend/*
             artifacts-to-publish/yt-backend-server-linux
           draft: false
