@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { DashboardLayout } from './DashboardLayout';
 import { BatchManager } from './BatchManager';
 import { ChannelManager } from './ChannelManager';
+import { SettingsManager } from './SettingsManager';
 import { LogConsole } from './LogConsole';
 import { LayoutDashboard, Video, Radio, Users, Settings, Plus, Loader2 } from 'lucide-react';
 import { TenantProvider, useTenant } from '../lib/tenant_context';
@@ -100,34 +101,7 @@ const AppContent: React.FC = () => {
           </div>
         );
       case 'settings':
-        return (
-          <div className="max-w-2xl mx-auto space-y-8">
-            <header>
-              <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Settings</h1>
-              <p className="text-slate-500 dark:text-slate-400 mt-1">Configure your global application preferences.</p>
-            </header>
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
-               <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-white">Auto-Enrichment</p>
-                    <p className="text-sm text-slate-500">Automatically optimize titles and descriptions using AI.</p>
-                  </div>
-                  <div className="w-12 h-6 bg-blue-600 rounded-full relative cursor-pointer">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
-                  </div>
-               </div>
-               <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-6">
-                  <div>
-                    <p className="font-bold text-slate-900 dark:text-white">Tauri Native Backend</p>
-                    <p className="text-sm text-slate-500">Use local Rust services for faster video processing.</p>
-                  </div>
-                  <div className="w-12 h-6 bg-slate-200 dark:bg-slate-700 rounded-full relative cursor-pointer">
-                    <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full"></div>
-                  </div>
-               </div>
-            </div>
-          </div>
-        );
+        return <SettingsManager />;
       default:
         return <div>Page not found</div>;
     }

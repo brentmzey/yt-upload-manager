@@ -5,6 +5,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '../lib/env';
 import type { SystemStatus } from '../bindings/youtube_types';
 
+const Logo: React.FC = () => (
+  <div className="w-9 h-9 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center border border-slate-200 dark:border-slate-700 shadow-inner hover:scale-105 transition-transform duration-200">
+    <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" viewBox="0 0 128 128" fill="currentColor">
+      <path d="M50.4 78.5a75.1 75.1 0 0 0-28.5 6.9l24.2-65.7c.7-2 1.9-3.2 3.4-3.2h29c1.5 0 2.7 1.2 3.4 3.2l24.2 65.7s-11.6-7-28.5-7L67 45.5c-.4-1.7-1.6-2.8-2.9-2.8-1.3 0-2.5 1.1-2.9 2.7L50.4 78.5Zm-1.1 28.2Zm-4.2-20.2c-2 6.6-.6 15.8 4.2 20.2a17.5 17.5 0 0 1 .2-.7 5.5 5.5 0 0 1 5.7-4.5c2.8.1 4.3 1.5 4.7 4.7.2 1.1.2 2.3.2 3.5v.4c0 2.7.7 5.2 2.2 7.4a13 13 0 0 0 5.7 4.9v-.3l-.2-.3c-1.8-5.6-.5-9.5 4.4-12.8l1.5-1a73 73 0 0 0 3.2-2.2 16 16 0 0 0 6.8-11.4c.3-2 .1-4-.6-6l-.8.6-1.6 1a37 37 0 0 1-22.4 2.7c-5-.7-9.7-2-13.2-6.2Z" />
+    </svg>
+  </div>
+);
+
 interface SidebarItemProps {
   icon: React.ReactNode;
   label: string;
@@ -62,8 +70,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, acti
       {/* Sidebar - Desktop */}
       <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col p-6 space-y-8 hidden md:flex">
         <div className="flex items-center space-x-3 px-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">YT</div>
-          <span className="text-xl font-bold tracking-tight dark:text-white">Manager</span>
+          <Logo />
+          <span className="text-xl font-black tracking-tight dark:text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">YT Manager</span>
         </div>
         
         <nav className="flex-1 space-y-1">
@@ -95,8 +103,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, acti
         <div className="p-6 flex flex-col h-full">
           <div className="flex items-center justify-between mb-8 px-2">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">YT</div>
-              <span className="text-xl font-bold tracking-tight dark:text-white">Manager</span>
+              <Logo />
+              <span className="text-xl font-black tracking-tight dark:text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">YT Manager</span>
             </div>
             <button onClick={() => setIsMobileMenuOpen(false)} className="text-slate-500 dark:text-slate-400">
               <X size={24} />

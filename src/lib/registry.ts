@@ -1,9 +1,9 @@
 import PocketBase, { BaseAuthStore } from 'pocketbase';
 import { Effect, Context, Layer } from 'effect';
 
-const MAIN_POCKETBASE_URL = (typeof process !== 'undefined' && process.env?.PUBLIC_MAIN_POCKETBASE_URL)
-  || (import.meta.env?.PUBLIC_MAIN_POCKETBASE_URL)
-  || 'https://yt-upload-manager-system-registry.pockethost.io/';
+import { ConfigServiceLive } from './config';
+const configValues = Effect.runSync(ConfigServiceLive.loadAll());
+const MAIN_POCKETBASE_URL = configValues.mainPocketBaseUrl;
 
 // Shared Auth Store for the session if needed, or isolated
 const hasLocalStorage = typeof window !== 'undefined' && !!window.localStorage;
@@ -50,28 +50,48 @@ export const RegistryServiceLive = Layer.succeed(
       }),
     getTenantConfig: (slug) =>
       Effect.gen(function* (_) {
-        const tenant = yield* _(Effect.tryPromise({
-          try: () => mainPb.collection('s_tenants').getFirstListItem(`tenant_slug="${slug}" && status="active"`),
-          catch: (e) => new RegistryError(e)
-        }));
+        const result = yield* _(
+          Effect.gen(function* (_) {
+            const tenant = yield* _(Effect.tryPromise({
+              try: () => mainPb.collection('s_tenants').getFirstListItem(`tenant_slug="${slug}" && status="active"`),
+              catch: (e) => new RegistryError(e)
+            }));
 
-        const props = yield* _(Effect.tryPromise({
-          try: () => mainPb.collection('s_tenant_properties').getFullList({ filter: `tenant_id="${tenant.id}"` }),
-          catch: (e) => new RegistryError(e)
-        }));
+            const props = yield* _(Effect.tryPromise({
+              try: () => mainPb.collection('s_tenant_properties').getFullList({ filter: `tenant_id="${tenant.id}"` }),
+              catch: (e) => new RegistryError(e)
+            }));
 
-        const configMap: Record<string, any> = {};
-        props.forEach(p => {
-          configMap[p.property_key] = p.property_value;
-        });
+            const configMap: Record<string, any> = {};
+            props.forEach(p => {
+              configMap[p.property_key] = p.property_value;
+            });
 
-        return {
-          id: tenant.id,
-          name: tenant.tenant_name,
-          slug: tenant.tenant_slug,
-          dbUrl: configMap['TENANT_PROD_BASE_DB_URI'] || 'http://127.0.0.1:8090',
-          properties: configMap
-        };
+            return {
+              id: tenant.id,
+              name: tenant.tenant_name,
+              slug: tenant.tenant_slug,
+              dbUrl: configMap['TENANT_PROD_BASE_DB_URI'] || 'http://127.0.0.1:8090',
+              properties: configMap
+            };
+          }).pipe(
+            Effect.catchAll(() => {
+              // Graceful local development offline fallback to avoid configuration crashes
+              console.warn(`⚠️ Central Registry DB at ${MAIN_POCKETBASE_URL} is offline or tenant '${slug}' was not found. Gracefully falling back to local-only offline mode.`);
+              return Effect.succeed({
+                id: 'local-dev-id',
+                name: 'Local Development Tenant',
+                slug: 'local-dev',
+                dbUrl: configValues.pocketBaseUrl || 'http://127.0.0.1:8090',
+                properties: {
+                  'TENANT_PROD_BASE_DB_URI': configValues.pocketBaseUrl || 'http://127.0.0.1:8090',
+                  'TENANT_REGION': 'local-offline',
+                }
+              });
+            })
+          )
+        );
+        return result;
       })
   }
 );

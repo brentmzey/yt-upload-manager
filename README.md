@@ -141,6 +141,10 @@ The project uses a **Dynamic Multi-Tenant Bootstrap** architecture:
 - **Dynamic Context**: The frontend bootstraps by hitting the registry and reconfiguring its services to point to the client's dedicated PocketHost instance.
 - **Isomorphic Services**: All logic (YouTube, Compression, Storage) is tenant-agnostic and relies on dynamic Effect-TS Layers.
 
+### 🏢 Enterprise Onboarding & Production Database
+If you are an enterprise client (such as a large church or media organization) setting this up for production use and you need a dedicated **Production PocketBase Registry** and tenant databases provisioned, please **contact Brent Zey** directly. 
+I will manually provision your enterprise environment, supply you with your secure tenant coordinates, and help your IT team deploy the headless background workers if needed!
+
 ## 🧪 Testing Strategy & Execution Guide
 
 The project maintains a rigorous, multi-layered quality assurance matrix designed to validate the stability of client databases, the Rust decompression pipeline, and parallel Effect-TS bulk stream processors.

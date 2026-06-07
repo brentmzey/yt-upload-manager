@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-latest]
+        platform: ${{ fromJSON( (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]' ) }}
 
     runs-on: ${{ matrix.platform }}
 
@@ -109,12 +109,20 @@ jobs:
       - name: Build Web
         run: just build-web
 
+      - name: Run E2E Stack Diagnostics
+        run: bun run verify-stack
+
+      - name: Run E2E Native Target & DB Connection Verification
+        run: bun run verify-gui
+
       - name: Build Desktop Binaries
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: bun run tauri build --verbose
 
       - name: Upload Cross-Platform Artifacts
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: desktop-binaries-${{ matrix.platform }}
@@ -129,6 +137,7 @@ jobs:
           if-no-files-found: warn
 
   build-arch-linux:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
@@ -184,7 +193,7 @@ jobs:
   publish-release:
     needs: [test-and-build, build-arch-linux, build-android, build-ios, build-backend-server]
     runs-on: ubuntu-latest
-    if: always() && !cancelled() && (needs.test-and-build.result == 'success' || needs.build-backend-server.result == 'success')
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && always() && !cancelled() && (needs.test-and-build.result == 'success' || needs.build-backend-server.result == 'success')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -255,6 +264,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-android:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -308,6 +318,7 @@ jobs:
           path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
 
   build-ios:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -390,6 +401,7 @@ jobs:
           path: src-tauri/gen/apple/build/Release-iphonesimulator/yt-upload-manager-ios-simulator.zip
 
   build-backend-server:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -415,4 +427,3 @@ jobs:
         with:
           name: backend-binaries-linux
           path: yt-backend-server-linux
- 

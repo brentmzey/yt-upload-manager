@@ -28,6 +28,75 @@ type BatchTask = {
   finishedAt?: string;
 };
 
+const dataURItoBlob = (dataURI: string): Blob => {
+  const byteString = atob(dataURI.split(',')[1]);
+  const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new Blob([ab], { type: mimeString });
+};
+
+const createMockThumbnail = (title: string, color: string): File => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 360;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    // Background gradient
+    const grad = ctx.createLinearGradient(0, 0, 640, 360);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, '#0f172a'); // Slate 900
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 640, 360);
+
+    // Text logo background
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.font = 'black 140px sans-serif';
+    ctx.fillText('LIVE', 40, 260);
+
+    // Stream category / group header
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('FUTURE BROADCAST SPEC', 50, 80);
+
+    // Stream Title text wrap (simple)
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 28px sans-serif';
+    const words = title.split(' ');
+    let line = '';
+    let y = 130;
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + ' ';
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > 540 && n > 0) {
+        ctx.fillText(line, 50, y);
+        line = words[n] + ' ';
+        y += 40;
+      } else {
+        line = testLine;
+      }
+    }
+    ctx.fillText(line, 50, y);
+
+    // Red Live indicator dot
+    ctx.fillStyle = '#ef4444'; // Red 500
+    ctx.beginPath();
+    ctx.arc(60, 305, 10, 0, 2 * Math.PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('SCHEDULED PRESENCE', 85, 312);
+  }
+
+  const dataUrl = canvas.toDataURL('image/jpeg');
+  const blob = dataURItoBlob(dataUrl);
+  return new File([blob], `preset_${title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.jpg`, { type: 'image/jpeg' });
+};
+
 export const BatchManager: React.FC = () => {
   const [mode, setMode] = useState<'upload' | 'schedule'>('schedule');
   const [channels, setChannels] = useState<any[]>([]);
@@ -272,6 +341,82 @@ export const BatchManager: React.FC = () => {
     setTasks(prev => [...prev, ...newTasks]);
   };
 
+  const handleLoadPresetStream = (type: 'esports' | 'keynote' | 'podcast') => {
+    const startIndex = tasks.length;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(19, 0, 0, 0); // 7:00 PM tomorrow
+
+    let presetTitle = '';
+    let presetColor = '#3b82f6'; // Blue
+    let presetMeta: Partial<typeof VideoMetadataSchema.Type> = {};
+
+    if (type === 'esports') {
+      presetTitle = 'Weekly Championship Finals: Team Frost vs Team Ignite';
+      presetColor = '#ef4444'; // Red
+      presetMeta = {
+        description: '🔥 The ultimate battle of the season is here! Watch live as Team Frost and Team Ignite go head-to-head for the Grand Trophy. Chat interaction enabled!',
+        categoryId: '20', // Gaming
+        privacyStatus: 'public',
+        tags: ['esports', 'gaming', 'championship', 'live-gaming', 'final-showdown'],
+        latencyPreference: 'ultraLow', // Critical for active esports chat!
+        enableAutoStart: true,
+        enableAutoStop: true,
+        enableDvr: true,
+        broadcastStreamDelayMs: 0,
+      };
+    } else if (type === 'keynote') {
+      presetTitle = 'NextGen AI Keynote 2026: Designing the Cognitive Decade';
+      presetColor = '#8b5cf6'; // Purple
+      presetMeta = {
+        description: '💡 Join our scientists, designers, and engineering leaders live from San Francisco as we unveil the roadmap for next-generation intelligence, cognitive agents, and custom platforms.',
+        categoryId: '28', // Science & Tech
+        privacyStatus: 'public',
+        tags: ['keynote', 'artificial-intelligence', 'agentic-ai', 'technology', 'innovation'],
+        latencyPreference: 'low', // Great balance for premium high-fidelity stream
+        enableAutoStart: false,
+        enableAutoStop: false,
+        enableDvr: true,
+        broadcastStreamDelayMs: 10000, // 10s delay for live moderation/safety!
+      };
+    } else {
+      presetTitle = 'The Late Night Codecast: Episode 42 - Talking Functional TypeScript';
+      presetColor = '#10b981'; // Emerald Green
+      presetMeta = {
+        description: '🎙️ Live Q&A and interactive pair programming session with developer advocates. Ask us anything about software engineering, monadic TypeScript libraries, and Tauri workflows!',
+        categoryId: '22', // People & Blogs
+        privacyStatus: 'unlisted', // Exclusive live link!
+        tags: ['programming', 'typescript', 'functional-programming', 'podcast', 'live-qa'],
+        latencyPreference: 'normal', // Normal latency for highest resolution
+        enableAutoStart: true,
+        enableAutoStop: false,
+        enableDvr: true,
+        broadcastStreamDelayMs: 0,
+      };
+    }
+
+    let thumbnailFile: File | undefined;
+    try {
+      thumbnailFile = createMockThumbnail(presetTitle, presetColor);
+    } catch (e) {
+      console.warn('Canvas thumbnail generation bypassed:', e);
+    }
+
+    const task: BatchTask = {
+      id: uuidv4(),
+      metadata: {
+        ...createDefaultMetadata(presetTitle, 0),
+        ...presetMeta,
+        scheduledStartTime: Option.some(tomorrow.toISOString()),
+      } as any,
+      status: 'idle',
+      thumbnailFile,
+    };
+
+    persistTask(task, startIndex);
+    setTasks(prev => [...prev, task]);
+  };
+
   const handleFiles = (files: FileList) => {
     const startIndex = tasks.length;
     const newTasks: BatchTask[] = Array.from(files).map((file, i) => {
@@ -480,12 +625,42 @@ export const BatchManager: React.FC = () => {
           <h3 className="font-bold text-slate-900 dark:text-white mb-1">Click or drag videos to stage</h3>
           <p className="text-slate-500 dark:text-slate-400 text-sm">Videos will be uploaded in the order shown below.</p>
           {mode === 'schedule' && (
-            <button 
-              onClick={(e) => { e.stopPropagation(); handleAddStreamPlaceholders(); }}
-              className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold text-sm transition-all"
-            >
-              Or Bulk Create Stream Placeholders
-            </button>
+            <div className="mt-6 flex flex-col items-center gap-4">
+              <div className="flex flex-wrap justify-center gap-3">
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleAddStreamPlaceholders(); }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md shadow-indigo-200 dark:shadow-none"
+                >
+                  Bulk Create Placeholders
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleLoadPresetStream('esports'); }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl font-bold text-xs transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                  Load Esports Preset
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleLoadPresetStream('keynote'); }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl font-bold text-xs transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 bg-purple-500 rounded-full animate-ping"></span>
+                  Load Keynote Preset
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleLoadPresetStream('podcast'); }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl font-bold text-xs transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+                  Load VIP Q&A Preset
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Examples populating dynamic thumbnails & deep stream specs</p>
+            </div>
           )}
         </div>
 

@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use sysinfo::System;
 use tokio::sync::mpsc;
 use thiserror::Error;
-use log::{info, debug, trace, error};
+use log::{info, debug, error};
 use std::io::Read;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use axum::{
@@ -317,10 +317,54 @@ async fn start_job_handler(
     Json(BatchJobResponse { video_id: "queued".to_string(), status: "Processing".to_string() })
 }
 
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, _metadata: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        println!(
+            "{} [{}] - {}",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            record.level(),
+            record.args()
+        );
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: SimpleLogger = SimpleLogger;
+
+pub fn init_server_logging() {
+    let _ = log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(log::LevelFilter::Debug));
+}
+
 // --- Entry Points ---
 
 pub async fn run_server(port: u16) {
+    init_server_logging();
+    
+    let main_pb_url = std::env::var("PUBLIC_MAIN_POCKETBASE_URL")
+        .unwrap_or_else(|_| "https://yt-upload-manager-system-registry.pockethost.io/".to_string());
+    let tenant_pb_url = std::env::var("PUBLIC_POCKETBASE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+
+    info!("=======================================================");
     info!("🚀 Starting Standalone Backend Server on port {}...", port);
+    info!("   └─ Backing Tenant DB URL   : {}", tenant_pb_url);
+    info!("   └─ Central Registry DB URL : {}", main_pb_url);
+    
+    if main_pb_url.contains("pockethost.io") {
+        info!("   ⚠️  PRODUCTION ENVIRONMENT DETECTED | Connected to central Pockethost!");
+    } else {
+        info!("   💡 DEVELOPMENT ENVIRONMENT DETECTED | Connected to local database.");
+    }
+    info!("=======================================================");
+
     let (tx, rx) = mpsc::channel(100);
     let active_jobs = Arc::new(Mutex::new(0));
     let concurrency_limit = Arc::new(tokio::sync::Semaphore::new(3));

@@ -138,14 +138,27 @@ export const createPocketBaseServiceLive = (url: string) => {
   ) };
 };
 
-// Default Export for compatibility (uses local dev by default)
-const defaultPbInstance = createPocketBaseServiceLive(
-  (typeof process !== 'undefined' && process.env?.VITE_TEST_PB_URL) 
-    ? process.env.VITE_TEST_PB_URL 
-    : (import.meta.env?.PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090')
-);
+// Default Export for compatibility (uses central isomorphic config manager)
+import { ConfigServiceLive } from './config';
+const configValues = Effect.runSync(ConfigServiceLive.loadAll());
+
+// Print highly visible architectural startup database context logs
+console.log(`\n=======================================================`);
+console.log(`🌐 yt-upload-manager | Initializing backing databases...`);
+console.log(`   └─ Backing Tenant DB URL   : ${configValues.pocketBaseUrl}`);
+console.log(`   └─ Central Registry DB URL : ${configValues.mainPocketBaseUrl}`);
+
+if (configValues.mainPocketBaseUrl.includes('pockethost.io')) {
+  console.log(`   ⚠️  PRODUCTION ENVIRONMENT DETECTED | Connected to central Pockethost!`);
+} else {
+  console.log(`   💡 DEVELOPMENT ENVIRONMENT DETECTED | Connected to local database.`);
+}
+console.log(`=======================================================\n`);
+
+const defaultPbInstance = createPocketBaseServiceLive(configValues.pocketBaseUrl);
 
 export const pb = defaultPbInstance.pb;
 export const PocketBaseServiceLive = defaultPbInstance.layer;
+
 
 

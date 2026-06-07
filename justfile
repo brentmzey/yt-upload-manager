@@ -209,7 +209,7 @@ integration: stop-test-pb test-pb
     POCKETBASE_URL=http://127.0.0.1:8091 PB_ADMIN_EMAIL=test@example.com PB_ADMIN_PASSWORD=test123456 bun run migrate
     
     # Run vitest targeting the integration test files
-    RUN_INTEGRATION_TESTS=1 VITE_TEST_PB_URL=http://127.0.0.1:8091 bun run test src/test/integration_pocketbase.test.ts src/test/bulk_staging_integration.test.ts
+    RUN_INTEGRATION_TESTS=1 VITE_TEST_PB_URL=http://127.0.0.1:8091 bun run test src/test/integration_pocketbase.test.ts src/test/bulk_staging_integration.test.ts src/test/dynamic_config_integration.test.ts src/test/youtube_broadcast_integration.test.ts
     
     echo "✅ Integration tests passed."
 # Run Vitest test suite
@@ -219,6 +219,14 @@ test:
 # Run tests with coverage reporting
 test-cov:
     bun run test:coverage
+
+# Verify E2E backend DB, migrations, server routes, workers, and console logs
+verify-stack: get-pb db-stop
+    bun run scripts/verify-stack.ts
+
+# Verify that the native UI app compiles, launches, and connects to production Pockethost DB
+verify-gui: get-pb db-stop
+    bun run scripts/verify-gui-target.ts
 
 # Check environment health and tool versions
 check-env:
@@ -239,8 +247,8 @@ db-stop:
     else
         pkill -9 "[p]ocketbase" 2>/dev/null || true
     fi
-    @rm -f .test_pb_pid .main_pb_pid
-    @echo "🛑 All PocketBase instances stopped."
+    rm -f .test_pb_pid .main_pb_pid
+    echo "🛑 All PocketBase instances stopped."
 
 # Start an isolated PocketBase for integration testing
 test-pb: get-pb

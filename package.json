@@ -15,7 +15,9 @@
     "typegen": "bun scripts/generate-types.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "verify-stack": "bun run scripts/verify-stack.ts",
+    "verify-gui": "bun run scripts/verify-gui-target.ts"
   },
   "dependencies": {
     "@astrojs/react": "^5.0.4",

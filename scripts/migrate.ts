@@ -415,6 +415,28 @@ const migrations: MigrationStep[] = [
         console.error('❌ Failed to update s_staged_videos:', e);
       }
     }
+  },
+  {
+    id: '2026-06-01-001-seed-default-settings',
+    description: 'Seed default application settings dynamically',
+    run: async (pb) => {
+      const defaults = [
+        { key: 'AUTO_ENRICHMENT', value: 'true', category: 'general' },
+        { key: 'TAURI_NATIVE_BACKEND', value: 'false', category: 'infrastructure' },
+        { key: 'MAX_CONCURRENT_UPLOADS', value: '3', category: 'performance' },
+        { key: 'YT_UPLOAD_RETRY_LIMIT', value: '5', category: 'performance' },
+        { key: 'YT_DEFAULT_PRIVACY', value: 'private', category: 'general' },
+      ];
+      for (const item of defaults) {
+        try {
+          await pb.collection('t_app_settings').getFirstListItem(`key="${item.key}"`);
+          console.log(`✅ Default setting verified: ${item.key}`);
+        } catch {
+          await pb.collection('t_app_settings').create(item);
+          console.log(`🌱 Seeded default setting: ${item.key} = ${item.value}`);
+        }
+      }
+    }
   }
 ];
 
