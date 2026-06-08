@@ -142,8 +142,10 @@ The project uses a **Dynamic Multi-Tenant Bootstrap** architecture:
 - **Isomorphic Services**: All logic (YouTube, Compression, Storage) is tenant-agnostic and relies on dynamic Effect-TS Layers.
 
 ### 🏢 Enterprise Onboarding & Production Database
-If you are an enterprise client (such as a large church or media organization) setting this up for production use and you need a dedicated **Production PocketBase Registry** and tenant databases provisioned, please **contact Brent Zey** directly. 
-I will manually provision your enterprise environment, supply you with your secure tenant coordinates, and help your IT team deploy the headless background workers if needed!
+If you are an enterprise client (such as a large church or media organization) setting this up for production use, you can now manage tenant deployments directly within the application!
+Navigate to the **Admin > Tenants** tab in the application to access the **Enterprise Provisioning Wizard**. This allows you to securely onboard new tenant organizations, provision their isolated metadata, and register their dedicated database endpoints in your central registry without running manual CLI scripts.
+
+For managed enterprise support, database scaling, or headless background worker deployment, please **contact Brent Zey** directly.
 
 ## 🧪 Testing Strategy & Execution Guide
 

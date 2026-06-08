@@ -8,7 +8,8 @@ import { Option } from 'effect';
 import { 
   RefreshCw, CheckCircle2, XCircle, Loader2, AlertTriangle, 
   Play, RotateCcw, Upload, FileVideo, Trash2, ExternalLink,
-  GripVertical, ChevronUp, ChevronDown, Edit3, Save, X, Image as ImageIcon
+  GripVertical, ChevronUp, ChevronDown, Edit3, Save, X, Image as ImageIcon,
+  CheckSquare, Check
 } from 'lucide-react';
 import { decompressFromBrotliB64, compressToBrotliB64 } from '../lib/compression';
 import type { YouTubeVideoDetails } from '../bindings/youtube_types';
@@ -107,6 +108,9 @@ export const BatchManager: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState<Partial<typeof VideoMetadataSchema.Type>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { appLayer } = useTenant();
@@ -489,6 +493,47 @@ export const BatchManager: React.FC = () => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, thumbnailFile: file } : t));
   };
 
+  const toggleSelection = (id: string) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedTaskIds.size === tasks.length) setSelectedTaskIds(new Set());
+    else setSelectedTaskIds(new Set(tasks.map(t => t.id)));
+  };
+
+  const applyBulkEdit = () => {
+    setTasks(prev => {
+      const newTasks = [...prev];
+      for (let i = 0; i < newTasks.length; i++) {
+        if (selectedTaskIds.has(newTasks[i].id)) {
+          const updatedMeta = { ...newTasks[i].metadata };
+          
+          if (bulkEditData.title) updatedMeta.title = bulkEditData.title;
+          if (bulkEditData.description) updatedMeta.description = bulkEditData.description;
+          if (bulkEditData.privacyStatus) updatedMeta.privacyStatus = bulkEditData.privacyStatus;
+          if (bulkEditData.categoryId) updatedMeta.categoryId = bulkEditData.categoryId;
+          if (bulkEditData.scheduledStartTime) updatedMeta.scheduledStartTime = bulkEditData.scheduledStartTime;
+
+          newTasks[i] = {
+            ...newTasks[i],
+            metadata: updatedMeta
+          };
+          persistTask(newTasks[i], i);
+        }
+      }
+      return newTasks;
+    });
+    setShowBulkEdit(false);
+    setSelectedTaskIds(new Set());
+    setBulkEditData({});
+  };
+
   const handleRunBatch = async (taskIds?: string[]) => {
     if (!selectedChannelId || !appLayer) {
       alert("Please select an active channel first.");
@@ -561,11 +606,11 @@ export const BatchManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="p-4 md:p-8 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 transition-colors">
+      <div className="relative p-4 md:p-8 bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] border border-white/40 dark:border-slate-800/50 transition-all">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <RefreshCw className={isProcessing ? 'animate-spin text-blue-600' : 'text-slate-400 dark:text-slate-500'} size={24} />
+              <RefreshCw className={isProcessing ? 'animate-spin text-indigo-600' : 'text-slate-400 dark:text-slate-500'} size={24} />
               Batch Control Center
             </h2>
             <div className="flex items-center gap-4 mt-2">
@@ -583,18 +628,18 @@ export const BatchManager: React.FC = () => {
               </select>
             </div>
           </div>
-          <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full md:w-auto shadow-inner">
+          <div className="flex bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/40 dark:border-slate-700/50 p-1.5 rounded-2xl w-full md:w-auto shadow-inner">
             <button 
               disabled={isProcessing}
               onClick={() => setMode('upload')}
-              className={`flex-1 md:flex-none px-8 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all duration-300 ${mode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-xl text-blue-600 dark:text-blue-400 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
+              className={`flex-1 md:flex-none px-8 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all duration-300 ${mode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600 dark:text-indigo-400 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
             >
               General Uploads
             </button>
             <button 
               disabled={isProcessing}
               onClick={() => setMode('schedule')}
-              className={`flex-1 md:flex-none px-8 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all duration-300 ${mode === 'schedule' ? 'bg-white dark:bg-slate-700 shadow-xl text-indigo-600 dark:text-indigo-400 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
+              className={`flex-1 md:flex-none px-8 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all duration-300 ${mode === 'schedule' ? 'bg-white dark:bg-slate-700 shadow-lg text-indigo-600 dark:text-indigo-400 scale-[1.02]' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-50'}`}
             >
               Live Streams
             </button>
@@ -607,10 +652,11 @@ export const BatchManager: React.FC = () => {
           onDragLeave={() => setIsDragging(false)}
           onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) handleFiles(e.dataTransfer.files); }}
           onClick={() => fileInputRef.current?.click()}
-          className={`mb-8 border-2 border-dashed rounded-2xl p-8 transition-all cursor-pointer flex flex-col items-center justify-center text-center ${
-            isDragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          className={`relative overflow-hidden mb-8 border-2 border-dashed rounded-3xl p-8 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center text-center group ${
+            isDragging ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-300/50 dark:border-slate-700/50 hover:border-indigo-400/50 dark:hover:border-indigo-500/50 bg-white/20 dark:bg-slate-800/20 hover:bg-white/40 dark:hover:bg-slate-800/40 backdrop-blur-sm'
           }`}
         >
+          {isDragging && <div className="absolute inset-0 bg-indigo-500/5 animate-pulse mix-blend-overlay"></div>}
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -619,7 +665,7 @@ export const BatchManager: React.FC = () => {
             accept="video/*" 
             className="hidden" 
           />
-          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 mb-4">
+          <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4 shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-100 dark:border-slate-700 group-hover:scale-110 transition-transform duration-300">
             <Upload size={32} />
           </div>
           <h3 className="font-bold text-slate-900 dark:text-white mb-1">Click or drag videos to stage</h3>
@@ -669,24 +715,56 @@ export const BatchManager: React.FC = () => {
             {/* Stats Bar */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               {[
-                { label: 'Total', value: stats.total, color: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-50 dark:bg-slate-800/50' },
-                { label: 'Succeeded', value: stats.success, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20' },
-                { label: 'Failed', value: stats.error, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20' },
-                { label: 'Processing', value: stats.processing, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+                { label: 'Total', value: stats.total, color: 'text-slate-700 dark:text-slate-200', bg: 'bg-white/60 dark:bg-slate-800/60 backdrop-blur-md shadow-sm border border-white/40 dark:border-slate-700/50' },
+                { label: 'Succeeded', value: stats.success, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50/80 dark:bg-emerald-900/20 backdrop-blur-md shadow-sm border border-emerald-100 dark:border-emerald-800/30' },
+                { label: 'Failed', value: stats.error, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50/80 dark:bg-red-900/20 backdrop-blur-md shadow-sm border border-red-100 dark:border-red-800/30' },
+                { label: 'Processing', value: stats.processing, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50/80 dark:bg-indigo-900/20 backdrop-blur-md shadow-sm border border-indigo-100 dark:border-indigo-800/30' },
               ].map((s, i) => (
-                <div key={i} className={`${s.bg} p-4 rounded-xl border border-black/5 dark:border-white/5`}>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">{s.label}</p>
-                  <p className={`text-xl md:text-2xl font-black ${s.color}`}>{s.value}</p>
+                <div key={i} className={`${s.bg} p-5 rounded-2xl transition-transform hover:-translate-y-1 duration-300`}>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">{s.label}</p>
+                  <p className={`text-2xl md:text-3xl font-black ${s.color} drop-shadow-sm`}>{s.value}</p>
                 </div>
               ))}
             </div>
 
+            {/* Bulk Action Bar */}
+            {selectedTaskIds.size > 0 && (
+              <div className="bg-indigo-600 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-indigo-500/20 mb-4 animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex items-center gap-3">
+                  <CheckSquare size={20} className="text-indigo-200" />
+                  <span className="font-bold">{selectedTaskIds.size} stream(s) selected</span>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setSelectedTaskIds(new Set())}
+                    className="px-4 py-2 bg-indigo-700 hover:bg-indigo-800 rounded-xl text-xs font-bold transition-colors"
+                  >
+                    Clear Selection
+                  </button>
+                  <button 
+                    onClick={() => setShowBulkEdit(true)}
+                    className="px-4 py-2 bg-white text-indigo-600 hover:bg-slate-50 rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-sm"
+                  >
+                    Bulk Edit Metadata
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Task List */}
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+            <div className="border border-white/40 dark:border-slate-800/50 rounded-2xl overflow-hidden bg-white/40 dark:bg-slate-900/40 backdrop-blur-md shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm min-w-[800px]">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 font-bold uppercase text-[10px] tracking-widest border-b border-slate-200 dark:border-slate-800">
+                  <thead className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-lg text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-widest border-b border-white/40 dark:border-slate-800/50">
                     <tr>
+                      <th className="px-4 py-4 w-12 text-center">
+                        <input 
+                          type="checkbox" 
+                          checked={tasks.length > 0 && selectedTaskIds.size === tasks.length}
+                          onChange={toggleAll}
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </th>
                       <th className="px-4 py-4 w-10"></th>
                       <th className="px-4 py-4 w-12 text-center">#</th>
                       <th className="px-6 py-4 w-12">Status</th>
@@ -705,6 +783,14 @@ export const BatchManager: React.FC = () => {
                           onDragEnd={handleDragEnd}
                           className={`group transition-all ${draggedIndex === index ? 'opacity-30 bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/50'} ${editingId === task.id ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}
                         >
+                          <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedTaskIds.has(task.id)}
+                              onChange={() => toggleSelection(task.id)}
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                          </td>
                           <td className="px-4 py-4 cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-600 hover:text-slate-500">
                             <GripVertical size={18} />
                           </td>
@@ -805,7 +891,7 @@ export const BatchManager: React.FC = () => {
                         {/* Inline Editor */}
                         {editingId === task.id && (
                           <tr>
-                            <td colSpan={6} className="px-8 py-8 bg-slate-50/50 dark:bg-slate-900/50 border-x-2 border-indigo-500/20">
+                            <td colSpan={7} className="px-8 py-8 bg-slate-50/50 dark:bg-slate-900/50 border-x-2 border-indigo-500/20">
                               <div className="max-w-5xl mx-auto space-y-10">
                                 {/* SECTION 1: Snippet & Identity */}
                                 <div>
@@ -1094,6 +1180,100 @@ export const BatchManager: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Bulk Edit Modal */}
+      {showBulkEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Edit3 className="text-indigo-500" />
+                Bulk Edit {selectedTaskIds.size} Streams
+              </h3>
+              <button onClick={() => setShowBulkEdit(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-4 rounded-xl text-sm font-medium border border-blue-100 dark:border-blue-800/30">
+                Any fields you fill out below will overwrite the existing values on all {selectedTaskIds.size} selected streams. Leave a field blank to keep the existing individual values.
+              </div>
+              
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Master Title</label>
+                <input 
+                  type="text" 
+                  value={bulkEditData.title || ''}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, title: e.target.value })}
+                  placeholder="Leave blank to keep existing"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Master Description</label>
+                <textarea 
+                  value={bulkEditData.description || ''}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, description: e.target.value })}
+                  placeholder="Leave blank to keep existing"
+                  rows={4}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Privacy Status</label>
+                  <select 
+                    value={bulkEditData.privacyStatus || ''}
+                    onChange={(e) => setBulkEditData({ ...bulkEditData, privacyStatus: e.target.value as any })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none"
+                  >
+                    <option value="">-- Do Not Change --</option>
+                    <option value="private">Private</option>
+                    <option value="unlisted">Unlisted</option>
+                    <option value="public">Public</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Category ID</label>
+                  <input 
+                    type="text" 
+                    value={bulkEditData.categoryId || ''}
+                    onChange={(e) => setBulkEditData({ ...bulkEditData, categoryId: e.target.value })}
+                    placeholder="Leave blank to keep"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none"
+                  />
+                </div>
+              </div>
+              
+              {mode === 'schedule' && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Master Scheduled Start Time</label>
+                  <input 
+                    type="datetime-local" 
+                    value={bulkEditData.scheduledStartTime ? Option.getOrNull(bulkEditData.scheduledStartTime)?.slice(0, 16) : ''}
+                    onChange={(e) => setBulkEditData({ ...bulkEditData, scheduledStartTime: e.target.value ? Option.some(new Date(e.target.value).toISOString()) : undefined })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 bg-slate-50/50 dark:bg-slate-800/50">
+              <button 
+                onClick={() => setShowBulkEdit(false)}
+                className="px-6 py-2.5 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={applyBulkEdit}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center gap-2"
+              >
+                <Check size={18} /> Apply Bulk Edits
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

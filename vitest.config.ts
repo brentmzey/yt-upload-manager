@@ -33,7 +33,8 @@ export default defineConfig({
       'src/test/integration_pocketbase.test.ts',
       'src/test/bulk_staging_integration.test.ts',
       'src/test/dynamic_config_integration.test.ts',
-      'src/test/youtube_broadcast_integration.test.ts'
+      'src/test/youtube_broadcast_integration.test.ts',
+      'src/test/tenant_onboarding_integration.test.ts'
     ],
   },
   resolve: {

@@ -154,4 +154,88 @@ describe('Bulk Staging & Stream Integration Stacking Pipeline', () => {
 
     await Effect.runPromise(appLayer);
   });
+
+  it('supports bulk editing staged video metadata properties', async () => {
+    const program = Effect.gen(function* (_) {
+      const pbService = yield* _(PocketBaseService);
+
+      // 1. Create a channel and batch
+      const channel = yield* _(pbService.createChannel({
+        name: 'Bulk Edit Channel',
+        handle: '@bulk_edit',
+        status: 'active',
+        youtube_config_brotli_b64: 'empty'
+      }));
+      const batch = yield* _(pbService.createBatch(channel.id));
+
+      // 2. Stage 2 items with generic metadata
+      const v1 = yield* _(pbService.saveStagedVideo({
+        batch_id: batch.id,
+        title: 'Draft Stream A',
+        status: 'idle',
+        job_type: 'LiveBroadcast',
+        sort_order: 0,
+        privacyStatus: 'private'
+      }));
+      const v2 = yield* _(pbService.saveStagedVideo({
+        batch_id: batch.id,
+        title: 'Draft Stream B',
+        status: 'idle',
+        job_type: 'LiveBroadcast',
+        sort_order: 1,
+        privacyStatus: 'private'
+      }));
+
+      // 3. Perform bulk edit equivalent operation
+      const bulkDesc = "This is a bulk applied description!";
+      const compressedBulkDesc = yield* _(compressToBrotliB64(bulkDesc));
+      
+      const bulkUpdatedV1 = yield* _(pbService.saveStagedVideo({
+        id: v1.id,
+        batch_id: batch.id,
+        title: 'Draft Stream A - Bulk Approved',
+        description_brotli_b64: compressedBulkDesc,
+        status: 'idle',
+        job_type: 'LiveBroadcast',
+        sort_order: 0,
+        privacyStatus: 'public',
+        categoryId: '20'
+      }));
+      
+      const bulkUpdatedV2 = yield* _(pbService.saveStagedVideo({
+        id: v2.id,
+        batch_id: batch.id,
+        title: 'Draft Stream B - Bulk Approved',
+        description_brotli_b64: compressedBulkDesc,
+        status: 'idle',
+        job_type: 'LiveBroadcast',
+        sort_order: 1,
+        privacyStatus: 'public',
+        categoryId: '20'
+      }));
+
+      // 4. Verify persistence and decompression
+      const stagedFromDb = yield* _(pbService.getStagedVideos(batch.id));
+      expect(stagedFromDb).toHaveLength(2);
+      
+      const check1 = stagedFromDb.find(v => v.id === v1.id)!;
+      const check2 = stagedFromDb.find(v => v.id === v2.id)!;
+      
+      expect(check1.title).toBe('Draft Stream A - Bulk Approved');
+      expect(check1.privacyStatus).toBe('public');
+      
+      expect(check2.title).toBe('Draft Stream B - Bulk Approved');
+      expect(check2.privacyStatus).toBe('public');
+      
+      const decomp1 = yield* _(decompressFromBrotliB64(check1.description_brotli_b64));
+      expect(decomp1).toBe(bulkDesc);
+    });
+
+    const appLayer = Effect.provide(program, PocketBaseServiceLive).pipe(
+      Effect.provide(YouTubeServiceLive),
+      Effect.provide(LoggerServiceLive)
+    );
+
+    await Effect.runPromise(appLayer);
+  });
 });

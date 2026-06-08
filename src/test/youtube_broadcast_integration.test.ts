@@ -138,4 +138,66 @@ describe('YouTube Live Broadcast Integration Pipeline', () => {
     expect(result.videoId).toBeDefined();
     expect(result.details.id).toBe(result.videoId);
   });
+
+  it('performs a TRUE End-to-End YouTube live broadcast scheduling and cleanup via REST', async () => {
+    // This test physically connects to the Google API and provisions a broadcast on your channel.
+    const accessToken = process.env.VITE_YT_E2E_ACCESS_TOKEN || process.env.YT_E2E_ACCESS_TOKEN;
+    
+    if (!accessToken) {
+      console.warn("⚠️ Skipping real YouTube E2E test: VITE_YT_E2E_ACCESS_TOKEN not set in environment.");
+      return;
+    }
+
+    const testTitle = `True E2E Automated Test Broadcast - ${Date.now()}`;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // 1. Create the Live Broadcast placeholder physically on YouTube
+    const createRes = await originalFetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=snippet,status', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: testTitle,
+          description: "This is a temporary broadcast created by the automated E2E test suite.",
+          scheduledStartTime: tomorrow.toISOString()
+        },
+        status: {
+          privacyStatus: "private",
+          selfDeclaredMadeForKids: false
+        }
+      })
+    });
+
+    const broadcastData = await createRes.json();
+    
+    if (!createRes.ok) {
+      throw new Error(`Failed to create broadcast: ${JSON.stringify(broadcastData)}`);
+    }
+
+    expect(broadcastData.id).toBeDefined();
+    expect(broadcastData.snippet.title).toBe(testTitle);
+    
+    const broadcastId = broadcastData.id;
+    console.log(`✅ Successfully created physical YouTube broadcast: ${broadcastId}`);
+
+    // 2. Automated Cleanup - Delete the broadcast via YouTube Data API v3
+    const deleteRes = await originalFetch(`https://www.googleapis.com/youtube/v3/liveBroadcasts?id=${broadcastId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!deleteRes.ok) {
+      const delData = await deleteRes.json();
+      throw new Error(`Failed to cleanup broadcast: ${JSON.stringify(delData)}`);
+    }
+
+    expect(deleteRes.status).toBe(204);
+    console.log(`🧹 Successfully cleaned up physical YouTube broadcast: ${broadcastId}`);
+  });
 });

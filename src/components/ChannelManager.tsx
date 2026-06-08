@@ -181,7 +181,7 @@ export const ChannelManager: React.FC = () => {
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-blue-200 dark:shadow-none"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-indigo-200 dark:shadow-none hover:scale-105 active:scale-95"
         >
           <Plus size={18} />
           Add New Channel
@@ -189,8 +189,8 @@ export const ChannelManager: React.FC = () => {
       </header>
 
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xl transition-all">
+          <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl w-full max-w-lg rounded-3xl shadow-2xl border border-white/40 dark:border-slate-700/50 overflow-hidden transform scale-100 animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
               <h3 className="text-lg font-black text-slate-900 dark:text-white">Add YouTube Channel</h3>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
@@ -226,16 +226,16 @@ export const ChannelManager: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
+      <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl rounded-3xl border border-white/40 dark:border-slate-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] overflow-hidden transition-all">
+        <div className="p-4 border-b border-white/40 dark:border-slate-800/50 flex items-center gap-4">
+          <div className="relative flex-1 max-w-md group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-indigo-500 transition-colors" size={18} />
             <input 
               type="text" 
               placeholder="Filter channels..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-800/50 border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full bg-white/50 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/50 dark:border-slate-700/50 rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/30 transition-all outline-none shadow-inner"
             />
           </div>
         </div>
@@ -252,16 +252,16 @@ export const ChannelManager: React.FC = () => {
             <p className="text-sm max-w-md">Click "Add New Channel" to get started with your YouTube OAuth credentials.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 divide-y md:divide-y-0 md:gap-px bg-slate-100 dark:bg-slate-800">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
             {filteredChannels.map(channel => (
-              <div key={channel.id} className="bg-white dark:bg-slate-900 p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+              <div key={channel.id} className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/40 dark:border-slate-700/50 p-6 rounded-2xl hover:-translate-y-1 hover:shadow-xl hover:bg-white dark:hover:bg-slate-800 transition-all duration-300 group">
                 <div className="flex justify-between items-start mb-4">
                   <div className="relative">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-inner border border-slate-200 dark:border-slate-700">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-xl shadow-[0_8px_20px_rgba(99,102,241,0.3)] border border-white/20 dark:border-slate-700 group-hover:scale-110 transition-transform duration-300">
                       {channel.name?.charAt(0).toUpperCase()}
                     </div>
-                    <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-lg border-2 border-white dark:border-slate-900 flex items-center justify-center ${
-                      channel.status === 'active' ? 'bg-green-500 text-white' : channel.status === 'pending' ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white'
+                    <div className={`absolute -bottom-1 -right-1 w-6 h-6 rounded-lg border-2 border-white dark:border-slate-900 flex items-center justify-center shadow-sm ${
+                      channel.status === 'active' ? 'bg-emerald-500 text-white' : channel.status === 'pending' ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
                     }`}>
                       {channel.status === 'active' ? <ShieldCheck size={12} /> : <AlertCircle size={12} />}
                     </div>
@@ -276,7 +276,7 @@ export const ChannelManager: React.FC = () => {
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{channel.handle}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/40 dark:border-slate-700/50">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-0.5">Created</p>
                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -306,14 +306,14 @@ export const ChannelManager: React.FC = () => {
                 )}
 
                 <div className="mt-6 flex gap-2">
-                  <button className="flex-1 py-2 px-4 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">
+                  <button className="flex-1 py-2 px-4 rounded-xl bg-white/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm transition-all">
                     View Config
                   </button>
                   {channel.status !== 'active' && (
                     <button 
                       onClick={() => handleActivate(channel.id)}
                       disabled={isActivating === channel.id}
-                      className="flex-1 py-2 px-4 rounded-lg bg-green-600 text-white text-[11px] font-bold hover:bg-green-700 transition-all flex items-center justify-center gap-2"
+                      className="flex-1 py-2 px-4 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[11px] font-bold hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-2"
                     >
                       {isActivating === channel.id ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
                       Activate

@@ -3,6 +3,7 @@ import { DashboardLayout } from './DashboardLayout';
 import { BatchManager } from './BatchManager';
 import { ChannelManager } from './ChannelManager';
 import { SettingsManager } from './SettingsManager';
+import { TenantManager } from './TenantManager';
 import { LogConsole } from './LogConsole';
 import { LayoutDashboard, Video, Radio, Users, Settings, Plus, Loader2 } from 'lucide-react';
 import { TenantProvider, useTenant } from '../lib/tenant_context';
@@ -38,9 +39,9 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return (
           <>
-            <header>
-              <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Overview</h1>
-              <p className="text-slate-500 dark:text-slate-400 mt-1">Manage your multi-channel YouTube operations.</p>
+            <header className="mb-8">
+              <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tighter">Overview</h1>
+              <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium tracking-wide">Manage your multi-channel YouTube operations.</p>
             </header>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -49,41 +50,46 @@ const AppContent: React.FC = () => {
               </div>
               
               <div className="space-y-8">
-                <section className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">Active Channels</h3>
+                <section className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-2xl p-6 rounded-3xl border border-white/40 dark:border-slate-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] transition-all">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">Active Channels</h3>
                     <button 
                       onClick={() => setActivePage('channels')}
-                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-blue-600 dark:text-blue-400 transition-colors"
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-xl text-indigo-600 dark:text-indigo-400 transition-colors bg-indigo-50 dark:bg-indigo-500/10"
                     >
                       <Plus size={20} />
                     </button>
                   </div>
                   <div className="space-y-3">
                     {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md hover:border-blue-100 dark:hover:border-blue-900 transition-all rounded-xl border border-slate-100 dark:border-slate-800 cursor-pointer group">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-sm">C{i}</div>
+                      <div key={i} className="flex items-center justify-between p-3 bg-white/40 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 rounded-2xl border border-white/40 dark:border-slate-700/50 cursor-pointer group">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-white dark:from-indigo-900/40 dark:to-slate-800 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-black text-sm shadow-inner border border-white/60 dark:border-slate-700/50">C{i}</div>
                           <div>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">Channel #{i}</p>
-                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">YouTube Official</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white tracking-tight group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Channel #{i}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-0.5">YouTube Official</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-full border border-emerald-100 dark:border-emerald-500/20">
+                          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">LIVE</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </section>
 
-                <section className="bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-blue-700 dark:to-indigo-900 p-6 rounded-2xl shadow-xl shadow-blue-100 dark:shadow-none text-white relative overflow-hidden">
+                <section className="bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-600 p-8 rounded-3xl shadow-[0_20px_40px_-15px_rgba(99,102,241,0.5)] text-white relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjgiPgo8cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMDUiLz4KPC9zdmc+')] opacity-20"></div>
                   <div className="relative z-10">
-                    <h3 className="font-bold text-lg mb-2">Pro Enrichment</h3>
-                    <p className="text-blue-100 text-sm mb-4">Upgrade to unlock AI-powered metadata optimization and batch thumbnail generation.</p>
-                    <button className="bg-white text-blue-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-50 transition-colors">Upgrade Now</button>
+                    <h3 className="font-black text-2xl mb-2 tracking-tight drop-shadow-sm">Pro Enrichment</h3>
+                    <p className="text-white/80 text-sm mb-6 font-medium leading-relaxed">Upgrade to unlock AI-powered metadata optimization and batch thumbnail generation.</p>
+                    <button className="bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 shadow-lg group-hover:scale-105 active:scale-95 flex items-center gap-2">
+                      Upgrade Now
+                    </button>
                   </div>
-                  <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+                  <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/20 rounded-full blur-3xl mix-blend-overlay group-hover:bg-white/30 transition-all duration-500"></div>
+                  <div className="absolute -left-8 -top-8 w-32 h-32 bg-indigo-400/40 rounded-full blur-2xl mix-blend-overlay"></div>
                 </section>
               </div>
             </div>
@@ -102,6 +108,8 @@ const AppContent: React.FC = () => {
         );
       case 'settings':
         return <SettingsManager />;
+      case 'tenants':
+        return <TenantManager />;
       default:
         return <div>Page not found</div>;
     }
