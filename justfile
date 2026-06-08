@@ -239,16 +239,17 @@ check-env:
 
 # --- Database Management ---
 
-# Stop any running PocketBase instance
+# Stop the local Tenant PocketBase instance (port 8090)
 db-stop:
     #!/usr/bin/env bash
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-        taskkill //F //IM pocketbase.exe //T 2>/dev/null || true
+        taskkill //F //FI "WINDOWTITLE eq PocketBase*" //T 2>/dev/null || true
     else
-        pkill -9 "[p]ocketbase" 2>/dev/null || true
+        pkill -9 -f "[p]ocketbase serve --automigrate=false --migrationsDir=pb_migrations_empty" 2>/dev/null || true
+        # Also try killing by default port if the above wasn't enough
+        lsof -ti:8090 | xargs kill -9 2>/dev/null || true
     fi
-    rm -f .test_pb_pid .main_pb_pid
-    echo "🛑 All PocketBase instances stopped."
+    echo "🛑 Tenant PocketBase stopped."
 
 # Start an isolated PocketBase for integration testing
 test-pb: get-pb
