@@ -25,12 +25,24 @@ install:
 # Download PocketBase binary if not in PATH
 get-pb:
     #!/usr/bin/env bash
-    if command -v pocketbase &> /dev/null; then
-        echo "✅ PocketBase already in PATH"
-    elif [ -f "./pocketbase" ] || [ -f "./pocketbase.exe" ]; then
-        echo "✅ PocketBase already exists in project root"
-    else
-        echo "📥 Downloading PocketBase..."
+    if [ -f "./pocketbase" ] || [ -f "./pocketbase.exe" ]; then
+        PB_CMD="./pocketbase"
+    elif command -v pocketbase &> /dev/null; then
+        PB_CMD="pocketbase"
+    fi
+
+    if [ -n "$PB_CMD" ]; then
+        CURRENT_VERSION=$($PB_CMD --version | awk '{print $3}')
+        if [ "$CURRENT_VERSION" == "0.23.1" ]; then
+            echo "✅ PocketBase 0.23.1 already installed."
+            exit 0
+        else
+            echo "⚠️ Found PocketBase $CURRENT_VERSION but require 0.23.1. Re-downloading..."
+            rm -f ./pocketbase ./pocketbase.exe
+        fi
+    fi
+
+    echo "📥 Downloading PocketBase..."
         VERSION="0.23.1"
         OS_RAW=$(uname -s | tr '[:upper:]' '[:lower:]')
         
