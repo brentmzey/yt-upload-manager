@@ -208,10 +208,14 @@ integration: stop-test-pb test-pb
     # Apply migrations to test DB
     POCKETBASE_URL=http://127.0.0.1:8091 PB_ADMIN_EMAIL=test@example.com PB_ADMIN_PASSWORD=test123456 bun run migrate
     
+    # Run migrations for Main DB
+    MAIN_POCKETBASE_URL=http://127.0.0.1:8091 MAIN_PB_ADMIN_EMAIL=test@example.com MAIN_PB_ADMIN_PASSWORD=test123456 bun run scripts/migrate-main.ts
+
     # Run vitest targeting the integration test files
     RUN_INTEGRATION_TESTS=1 PUBLIC_MAIN_POCKETBASE_URL=http://127.0.0.1:8091 VITE_TEST_PB_URL=http://127.0.0.1:8091 bun run test src/test/integration_pocketbase.test.ts src/test/bulk_staging_integration.test.ts src/test/dynamic_config_integration.test.ts src/test/youtube_broadcast_integration.test.ts src/test/tenant_onboarding_integration.test.ts
     
     echo "✅ Integration tests passed."
+
 # Run Vitest test suite
 test:
     bun run test

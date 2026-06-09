@@ -75,11 +75,11 @@ export const RegistryServiceLive = Layer.succeed(
               properties: configMap
             };
           }).pipe(
-            Effect.catchAll(() => {
-              // Graceful local development offline fallback to avoid configuration crashes
-              console.warn(`⚠️ Central Registry DB at ${MAIN_POCKETBASE_URL} is offline or tenant '${slug}' was not found. Gracefully falling back to local-only offline mode.`);
+            Effect.catchAll((e) => {
+              // Graceful local development offline fallback
+              console.warn(`⚠️ Central Registry DB at ${MAIN_POCKETBASE_URL} is offline or tenant '${slug}' was not found. Error: ${e.cause}. Gracefully falling back to local-only offline mode.`);
               return Effect.succeed({
-                id: 'local-dev-id',
+                id: 'local_dev_fallback',
                 name: 'Local Development Tenant',
                 slug: 'local-dev',
                 dbUrl: configValues.pocketBaseUrl || 'http://127.0.0.1:8090',

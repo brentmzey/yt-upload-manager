@@ -4,6 +4,7 @@ import { RegistryService, RegistryServiceLive, type TenantConfig } from './regis
 import { PocketBaseService, createPocketBaseServiceLive } from './pocketbase';
 import { LoggerServiceLive } from './logger';
 import { YouTubeServiceLive } from './youtube/service';
+import { SettingsServiceLive } from './settings';
 
 interface TenantContextType {
   tenant: TenantConfig | null;
@@ -69,7 +70,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const appLayer = useMemo(() => {
     if (!tenant) return null;
     const { layer: tenantPbLive } = createPocketBaseServiceLive(tenant.dbUrl);
-    return Layer.mergeAll(tenantPbLive, LoggerServiceLive, YouTubeServiceLive);
+    return Layer.mergeAll(tenantPbLive, LoggerServiceLive, YouTubeServiceLive, SettingsServiceLive);
   }, [tenant]);
 
   return (

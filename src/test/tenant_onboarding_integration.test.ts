@@ -15,44 +15,10 @@ describe('Tenant Onboarding Integration', () => {
     process.env.PUBLIC_MAIN_POCKETBASE_URL = testUrl;
     process.env.VITE_TEST_PB_URL = testUrl;
     
-    // We need to ensure the schema for s_tenants exists on the test db.
-    // The justfile runs `bun run migrate` which creates the basic schema.
-    // However, s_tenants is part of the MAIN registry schema.
-    // For this test, we'll manually create the collections if they don't exist
-    // using the admin client.
+    // The justfile runs `bun run migrate` and `bun run scripts/migrate-main.ts`
+    // which creates the basic schema for both Tenant and Registry databases on port 8091.
     const pb = new PocketBase(testUrl);
     await pb.collection('_superusers').authWithPassword('test@example.com', 'test123456');
-
-    try {
-      await pb.collections.getOne('s_tenants');
-    } catch (e) {
-      // Create s_tenants
-      await pb.collections.create({
-        name: 's_tenants',
-        type: 'base',
-        schema: [
-          { name: 'tenant_name', type: 'text', required: true },
-          { name: 'tenant_slug', type: 'text', required: true },
-          { name: 'status', type: 'text', required: true }
-        ]
-      });
-    }
-
-    try {
-      await pb.collections.getOne('s_tenant_properties');
-    } catch (e) {
-      // Create s_tenant_properties
-      await pb.collections.create({
-        name: 's_tenant_properties',
-        type: 'base',
-        schema: [
-          { name: 'tenant_id', type: 'text', required: true },
-          { name: 'property_key', type: 'text', required: true },
-          { name: 'property_value', type: 'text', required: true },
-          { name: 'is_secret', type: 'bool', required: false }
-        ]
-      });
-    }
   });
 
   it('authenticates and creates a tenant', async () => {
