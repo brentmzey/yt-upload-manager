@@ -1174,7 +1174,11 @@ export const BatchManager: React.FC = () => {
                 className="flex-1 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:bg-slate-800 dark:hover:bg-slate-100 disabled:opacity-50 shadow-xl shadow-slate-200 dark:shadow-none flex items-center justify-center gap-2 transition-all"
               >
                 {isProcessing ? <Loader2 className="animate-spin" /> : <Play size={18} />}
-                {stats.error > 0 ? 'Retry Failed & Run Idle' : `Start Batch (${tasks.length} videos)`}
+                {tasks.length > 0 && tasks.every(t => t.status === 'success') 
+                  ? 'All Tasks Completed' 
+                  : stats.error > 0 
+                    ? 'Retry Failed & Run Idle' 
+                    : `Start Batch (${tasks.length} videos)`}
               </button>
             </div>
           </div>
