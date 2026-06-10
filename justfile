@@ -190,11 +190,12 @@ main-up: get-pb
 
 main-stop:
     #!/usr/bin/env bash
-    [ -f .main_pb_pid ] && kill $(cat .main_pb_pid) 2>/dev/null && rm .main_pb_pid && echo "🛑 Main PB stopped via PID." || true
+    [ -f .main_pb_pid ] && kill -9 $(cat .main_pb_pid) 2>/dev/null && rm .main_pb_pid && echo "🛑 Main PB stopped via PID." || true
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
         taskkill //F //FI "WINDOWTITLE eq PocketBase*" //T 2>/dev/null || true
     else
         pkill -9 -f "[p]ocketbase serve --http=127.0.0.1:8080" 2>/dev/null || true
+        lsof -ti:8080 | xargs kill -9 2>/dev/null || true
     fi
 
 # Programmatically align schemas across ALL registered tenant databases
@@ -301,11 +302,12 @@ test-pb: get-pb
 
 stop-test-pb:
     #!/usr/bin/env bash
-    [ -f .test_pb_pid ] && kill $(cat .test_pb_pid) 2>/dev/null && rm .test_pb_pid && echo "🛑 Test PB stopped via PID." || true
+    [ -f .test_pb_pid ] && kill -9 $(cat .test_pb_pid) 2>/dev/null && rm .test_pb_pid && echo "🛑 Test PB stopped via PID." || true
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
         taskkill //F //FI "WINDOWTITLE eq PocketBase*" //T 2>/dev/null || true
     else
         pkill -9 -f "[p]ocketbase serve --http=127.0.0.1:8091" 2>/dev/null || true
+        lsof -ti:8091 | xargs kill -9 2>/dev/null || true
     fi
 
 # Run migrations on a running PocketBase instance
