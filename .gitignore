@@ -20,6 +20,7 @@ pb_data/
 pb_data_main/
 pb_data_test/
 .*_pb_pid
+*.log
 
 # coverage
 coverage/

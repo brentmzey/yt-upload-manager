@@ -1,3 +1,1 @@
-2026/06/08 23:23:21 Server started at http://127.0.0.1:8080
-├─ REST API:  http://127.0.0.1:8080/api/
-└─ Dashboard: http://127.0.0.1:8080/_/
+Error: listen tcp 127.0.0.1:8080: bind: address already in use
