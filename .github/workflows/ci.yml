@@ -390,6 +390,9 @@ jobs:
           else:
               print("project.pbxproj not found!")
           '
+          # Print the patched script line to CI logs for debugging
+          grep -E "tauri ios xcode-script" src-tauri/gen/apple/app.xcodeproj/project.pbxproj || true
+          
           # Pre-build web frontend so the Xcode bundle assets are up to date
           bun run build
           # Compile the iOS Simulator application using Tauri CLI to ensure the companion WebSocket server is active
