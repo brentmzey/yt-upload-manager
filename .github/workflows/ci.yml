@@ -370,23 +370,23 @@ jobs:
             # Provide dummy team ID to satisfy init if secret is missing
             bun run tauri ios init --ci
           fi
-          # Disable Xcode code signing and inject system PATH into the build phase script directly inside the generated project configuration
+          # Disable Xcode code signing, force active arch only, and inject system PATH into the build phase script directly inside the generated project configuration
           python3 -c '
-          import os
+          import os, re
           filepath = "src-tauri/gen/apple/app.xcodeproj/project.pbxproj"
           if os.path.exists(filepath):
               with open(filepath, "r") as f:
                   content = f.read()
-              overrides = "\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";"
+              overrides = "\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";\n\t\t\t\tONLY_ACTIVE_ARCH = YES;"
               new_content = content.replace("buildSettings = {", "buildSettings = {" + overrides)
               
               current_path = os.environ.get("PATH", "")
               path_override = f"export PATH=\\\"{current_path}\\\"; "
-              new_content = new_content.replace("shellScript = \"bun tauri ios xcode-script", f"shellScript = \"{path_override}bun tauri ios xcode-script")
+              new_content = re.sub(r"shellScript\s*=\s*\"(.*?tauri ios xcode-script)", f"shellScript = \"{path_override}\\1", new_content)
               
               with open(filepath, "w") as f:
                   f.write(new_content)
-              print("Successfully disabled code signing and injected PATH into project.pbxproj")
+              print("Successfully patched project.pbxproj for code signing, active arch, and environment path")
           else:
               print("project.pbxproj not found!")
           '
