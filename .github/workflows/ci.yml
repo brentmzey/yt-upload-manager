@@ -401,8 +401,19 @@ jobs:
             cat ios_build.log
             exit 1
           fi
-          # Zip the simulator .app bundle so it can be uploaded as a file to the GitHub Release
-          cd src-tauri/gen/apple/build/Release-iphonesimulator
+          # Locate and package the simulator .app bundle from Xcode's DerivedData directory
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "yt-upload-manager.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ Could not find compiled .app bundle in DerivedData!"
+            exit 1
+          fi
+          echo "Found compiled app at: $APP_PATH"
+          
+          OUTPUT_DIR="src-tauri/gen/apple/build/Release-iphonesimulator"
+          mkdir -p "$OUTPUT_DIR"
+          cp -R "$APP_PATH" "$OUTPUT_DIR/yt-upload-manager.app"
+          
+          cd "$OUTPUT_DIR"
           zip -r yt-upload-manager-ios-simulator.zip yt-upload-manager.app
 
 
