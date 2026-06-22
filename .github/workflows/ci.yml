@@ -193,7 +193,7 @@ jobs:
   publish-release:
     needs: [test-and-build, build-arch-linux, build-android, build-ios, build-backend-server]
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development' || github.event_name == 'workflow_dispatch') && always() && !cancelled() && (needs.test-and-build.result == 'success' || needs.build-backend-server.result == 'success')
+    if: github.ref == 'refs/heads/main' && always() && !cancelled() && (needs.test-and-build.result == 'success' || needs.build-backend-server.result == 'success')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
