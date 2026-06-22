@@ -3,7 +3,8 @@ import { Effect, Layer } from 'effect';
 import { YouTubeService, YouTubeServiceLive, processBatch } from '../lib/youtube/service';
 import { LoggerService, LoggerServiceLive, logInfo, logError } from '../lib/logger';
 import { VideoMetadataSchema } from '../lib/channel/config';
-import { PocketBaseService, PocketBaseServiceLive, ChannelRecord } from '../lib/pocketbase';
+import { PocketBaseService, PocketBaseServiceLive } from '../lib/pocketbase';
+import type { ChannelRecord } from '../lib/pocketbase';
 import { Option, Chunk } from 'effect';
 import { 
   RefreshCw, CheckCircle2, XCircle, Loader2, AlertTriangle, 
