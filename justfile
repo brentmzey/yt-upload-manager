@@ -345,3 +345,15 @@ fix-cache:
     rm -rf node_modules/.vite node_modules/.astro
     bun install
     @echo "🛠️  Caches cleared and dependencies reinstalled."
+
+# Bootstraps local configuration (if missing), installs dependencies, starts DB, and launches Tauri
+start:
+    #!/usr/bin/env bash
+    if [ ! -f .env ]; then
+        echo "⚙️ Creating default .env configuration..."
+        printf "PUBLIC_MAIN_POCKETBASE_URL=http://127.0.0.1:8080\nMAIN_PB_ADMIN_EMAIL=admin@yt-manager.com\nMAIN_PB_ADMIN_PASSWORD=admin123456\nPUBLIC_POCKETBASE_URL=http://127.0.0.1:8090\nPB_ADMIN_EMAIL=admin@yt-manager.com\nPB_ADMIN_PASSWORD=admin123456\nPUBLIC_EDGE_BACKEND_URL=https://api.yt-manager.com\nYOUTUBE_CLIENT_ID=your_client_id_here\nYOUTUBE_CLIENT_SECRET=your_client_secret_here\nYOUTUBE_REDIRECT_URI=http://localhost:1420\nYT_DUMMY_MODE=true\nPUBLIC_YT_DUMMY_MODE=true\n" > .env
+    fi
+    just setup
+    just up
+    just tauri
+
