@@ -58,7 +58,7 @@ export const TenantManager: React.FC = () => {
       }));
       
       setTenants(enhancedTenants);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("Could not fetch from central registry. Running in local fallback.", err);
       // Fallback local mock
       setTenants([
@@ -113,8 +113,8 @@ export const TenantManager: React.FC = () => {
       setShowWizard(false);
       fetchTenants();
       setFormData({ name: '', slug: '', dbUrl: 'http://127.0.0.1:8090', adminEmail: 'admin@' });
-    } catch (err: any) {
-      setError(err.message || "Failed to create tenant");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create tenant");
     } finally {
       setIsSubmitting(false);
     }

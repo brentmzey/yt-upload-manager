@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, MoreVertical, ExternalLink, ShieldCheck, AlertCircle, Loader2, Database, X, Shield, Key } from 'lucide-react';
 import { PocketBaseService, PocketBaseError } from '../lib/pocketbase';
 import { LoggerService, LoggerServiceLive } from '../lib/logger';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Option } from 'effect';
 import { compressToBrotliB64 } from '../lib/compression';
 import { useTenant } from '../lib/tenant_context';
 
@@ -43,7 +43,17 @@ export const ChannelManager: React.FC = () => {
     const program = Effect.gen(function* (_) {
       const pbService = yield* _(PocketBaseService);
       const list = yield* _(pbService.getChannels());
-      setChannels(list as any);
+      const mapped: Channel[] = list.map(c => ({
+        id: c.id,
+        name: c.name,
+        handle: c.handle,
+        status: c.status,
+        created: c.created,
+        updated: c.updated,
+        last_error: Option.getOrNull(c.last_error) || undefined,
+        last_sync_at: Option.getOrNull(c.last_sync_at) || undefined,
+      }));
+      setChannels(mapped);
     }).pipe(
       Effect.catchAll((err) => {
         console.error("Fetch Error:", err);
@@ -138,11 +148,15 @@ export const ChannelManager: React.FC = () => {
       setShowAddModal(false);
       setFormData({ name: '', handle: '', clientId: '', clientSecret: '' });
       fetchChannels();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("❌ FAILED TO SAVE CHANNEL:", e);
-      const errorMessage = e?._tag === 'CompressionError' 
-        ? `Compression failed: ${e.message}. This usually means the WASM module failed to load.`
-        : `Database error: ${e?._tag || 'Unknown error'}.`;
+      const isObject = e && typeof e === 'object';
+      const tag = isObject && '_tag' in e ? String((e as { _tag: unknown })._tag) : '';
+      const message = isObject && 'message' in e ? String((e as { message: unknown }).message) : '';
+
+      const errorMessage = tag === 'CompressionError' 
+        ? `Compression failed: ${message}. This usually means the WASM module failed to load.`
+        : `Database error: ${tag || 'Unknown error'}.`;
       
       alert(`Error: ${errorMessage}`);
     } finally {

@@ -38,18 +38,18 @@ vi.mock('../lib/pocketbase', async (importOriginal) => {
   const MockLayer = Layer.succeed(
     actual.PocketBaseService,
     {
-      getChannels: () => Effect.succeed([]),
+      getChannels: () => Effect.succeed([] as actual.ChannelRecord[]),
       isAuthenticated: () => false,
       authenticateAsAdmin: () => Effect.void,
-      getPendingBatch: () => Effect.succeed({ id: 'batch-1' }),
-      createBatch: () => Effect.succeed({ id: 'batch-1' }),
-      getStagedVideos: () => Effect.succeed([]),
-      saveStagedVideo: (v: any) => Effect.succeed({ id: v.id || 'new-id' }),
+      getPendingBatch: () => Effect.succeed({ id: 'batch-1' } as actual.BatchRecord),
+      createBatch: () => Effect.succeed({ id: 'batch-1' } as actual.BatchRecord),
+      getStagedVideos: () => Effect.succeed([] as actual.StagedVideoRecord[]),
+      saveStagedVideo: (v: Partial<actual.StagedVideoRecord>) => Effect.succeed({ id: v.id || 'new-id' } as actual.StagedVideoRecord),
       deleteStagedVideo: () => Effect.void,
-      getSetting: () => Effect.fail(new Error('Not found') as any),
+      getSetting: () => Effect.fail(new actual.PocketBaseError(new Error('Not found'))),
       updateSetting: () => Effect.void,
-      activateChannel: (id: string) => Effect.succeed({ id, status: 'active' }),
-      updateChannel: (id: string, updates: any) => Effect.succeed({ id, ...updates }),
+      activateChannel: (id: string) => Effect.succeed({ id, status: 'active' } as actual.ChannelRecord),
+      updateChannel: (id: string, updates: Partial<Omit<actual.ChannelRecord, 'id' | 'created' | 'updated'>>) => Effect.succeed({ id, ...updates } as actual.ChannelRecord),
     }
   );
 
@@ -60,7 +60,7 @@ vi.mock('../lib/pocketbase', async (importOriginal) => {
 });
 
 import { useTenant } from '../lib/tenant_context';
-import { PocketBaseService } from '../lib/pocketbase';
+import { PocketBaseService, ChannelRecord, BatchRecord, StagedVideoRecord, PocketBaseError } from '../lib/pocketbase';
 import { LoggerServiceLive } from '../lib/logger';
 import { YouTubeServiceLive } from '../lib/youtube/service';
 
@@ -80,27 +80,29 @@ describe('BatchManager', () => {
         Layer.succeed(
           PocketBaseService,
           {
-            getChannels: () => Effect.succeed([{ id: 'ch-1', name: 'Test', status: 'active' }]),
+            getChannels: () => Effect.succeed([{ id: 'ch-1', name: 'Test', status: 'active' } as ChannelRecord]),
             isAuthenticated: () => false,
             authenticateAsAdmin: () => Effect.void,
-            getPendingBatch: () => Effect.succeed({ id: 'batch-1' }),
-            createBatch: () => Effect.succeed({ id: 'batch-1' }),
-            getStagedVideos: () => Effect.succeed([]),
-            saveStagedVideo: (v: any) => Effect.succeed({ id: v.id || 'new-id' }),
+            getPendingBatch: () => Effect.succeed({ id: 'batch-1' } as BatchRecord),
+            createBatch: () => Effect.succeed({ id: 'batch-1' } as BatchRecord),
+            getStagedVideos: () => Effect.succeed([] as StagedVideoRecord[]),
+            saveStagedVideo: (v: Partial<StagedVideoRecord>) => Effect.succeed({ id: v.id || 'new-id' } as StagedVideoRecord),
             deleteStagedVideo: () => Effect.void,
-            getSetting: () => Effect.fail(new Error('Not found')),
+            getSetting: () => Effect.fail(new PocketBaseError(new Error('Not found'))),
             updateSetting: () => Effect.void,
-            activateChannel: (id: string) => Effect.succeed({ id, status: 'active' }),
-            updateChannel: (id: string, updates: any) => Effect.succeed({ id, ...updates }),
+            activateChannel: (id: string) => Effect.succeed({ id, status: 'active' } as ChannelRecord),
+            updateChannel: (id: string, updates: Partial<Omit<ChannelRecord, 'id' | 'created' | 'updated'>>) => Effect.succeed({ id, ...updates } as ChannelRecord),
           }
         ),
         LoggerServiceLive,
         YouTubeServiceLive
       )
-    } as any);
+    } as unknown as ReturnType<typeof useTenant>);
   });
-  it('renders the dropzone and defaults to Live Streams', () => {
-    render(<BatchManager />);
+  it('renders the dropzone and defaults to Live Streams', async () => {
+    await act(async () => {
+      render(<BatchManager />);
+    });
     expect(screen.getByText(/Click or drag videos to stage/i)).toBeDefined();
     // Check if Live Streams is selected (look for the style class or text)
     const streamBtn = screen.getByText(/Live Streams/i);
@@ -108,7 +110,11 @@ describe('BatchManager', () => {
   });
 
   it('stages files and allows editing metadata in upload mode', async () => {
-    const { container } = render(<BatchManager />);
+    let container: HTMLElement;
+    await act(async () => {
+      const rendered = render(<BatchManager />);
+      container = rendered.container;
+    });
     
     // Switch to General Uploads mode
     const uploadBtn = screen.getByText(/General Uploads/i);
@@ -117,7 +123,7 @@ describe('BatchManager', () => {
     });
 
     const file = new File(['video content'], 'test-video.mp4', { type: 'video/mp4' });
-    const input = container.querySelector('input[type="file"]')!;
+    const input = container!.querySelector('input[type="file"]')!;
     
     await act(async () => {
       fireEvent.change(input, { target: { files: [file] } });
@@ -149,7 +155,11 @@ describe('BatchManager', () => {
   });
 
   it('allows reordering tasks using move buttons', async () => {
-    const { container } = render(<BatchManager />);
+    let container: HTMLElement;
+    await act(async () => {
+      const rendered = render(<BatchManager />);
+      container = rendered.container;
+    });
     
     // Switch to General Uploads mode
     const uploadBtn = screen.getByText(/General Uploads/i);
@@ -159,13 +169,13 @@ describe('BatchManager', () => {
 
     const file1 = new File(['1'], 'v1.mp4', { type: 'video/mp4' });
     const file2 = new File(['2'], 'v2.mp4', { type: 'video/mp4' });
-    const input = container.querySelector('input[type="file"]')!;
+    const input = container!.querySelector('input[type="file"]')!;
     
     await act(async () => {
       fireEvent.change(input, { target: { files: [file1, file2] } });
     });
 
-    const rows = container.querySelectorAll('tbody tr');
+    const rows = container!.querySelectorAll('tbody tr');
     expect(rows[0]).toHaveTextContent('v1');
     expect(rows[1]).toHaveTextContent('v2'); 
 
@@ -175,7 +185,7 @@ describe('BatchManager', () => {
       fireEvent.click(moveUpBtns[1]); // Button for second task
     });
 
-    const newRows = container.querySelectorAll('tbody tr');
+    const newRows = container!.querySelectorAll('tbody tr');
     expect(newRows[0]).toHaveTextContent('v2');
     expect(newRows[1]).toHaveTextContent('v1');
   });

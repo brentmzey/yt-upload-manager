@@ -3,7 +3,8 @@ import {
   VideoMetadataSchema, 
   StagedVideoRecordSchema,
   ChannelSchema,
-  ChannelRecordSchema
+  ChannelRecordSchema,
+  YouTubeLicense
 } from "./channel/config";
 import { 
   compressToBrotliB64, 
@@ -113,7 +114,7 @@ export const stagedVideoToDomain = (
       title: storage.title,
       description,
       privacyStatus: storage.privacyStatus,
-      license: (storage.license._tag === 'Some' ? storage.license.value : 'youtube') as any,
+      license: (storage.license._tag === 'Some' ? storage.license.value : 'youtube') as typeof YouTubeLicense.Type,
       embeddable: storage.embeddable._tag === 'Some' ? storage.embeddable.value : true,
       publicStatsViewable: storage.publicStatsViewable._tag === 'Some' ? storage.publicStatsViewable.value : true,
       madeForKids: storage.madeForKids._tag === 'Some' ? storage.madeForKids.value : false,

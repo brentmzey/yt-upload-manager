@@ -65,7 +65,7 @@ const getRawValue = (key: string): Option.Option<string> => {
   // 3. Check import.meta.env (Vite / Astro bundled environment)
   // We use this fallback pattern to avoid compiler issues if import.meta.env is undefined
   try {
-    const metaEnv = (import.meta as any).env;
+    const metaEnv = (import.meta as unknown as { env?: Record<string, unknown> }).env;
     if (metaEnv && metaEnv[key] !== undefined) {
       return Option.some(String(metaEnv[key]));
     }

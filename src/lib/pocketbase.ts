@@ -1,5 +1,16 @@
 import PocketBase, { BaseAuthStore } from 'pocketbase';
 import { Effect, Context, Layer } from 'effect';
+import { 
+  ChannelRecordSchema, 
+  BatchRecordSchema, 
+  StagedVideoRecordSchema,
+  SettingRecordSchema 
+} from './channel/config';
+
+export type ChannelRecord = typeof ChannelRecordSchema.Type;
+export type BatchRecord = typeof BatchRecordSchema.Type;
+export type StagedVideoRecord = typeof StagedVideoRecordSchema.Type;
+export type SettingRecord = typeof SettingRecordSchema.Type;
 
 export class PocketBaseError {
   readonly _tag = 'PocketBaseError';
@@ -7,19 +18,19 @@ export class PocketBaseError {
 }
 
 export interface PocketBaseService {
-  readonly getChannels: () => Effect.Effect<any[], PocketBaseError>;
-  readonly createChannel: (channel: any) => Effect.Effect<any, PocketBaseError>;
-  readonly updateChannel: (id: string, updates: any) => Effect.Effect<any, PocketBaseError>;
-  readonly activateChannel: (id: string) => Effect.Effect<any, PocketBaseError>;
+  readonly getChannels: () => Effect.Effect<ChannelRecord[], PocketBaseError>;
+  readonly createChannel: (channel: Omit<ChannelRecord, 'id' | 'created' | 'updated'>) => Effect.Effect<ChannelRecord, PocketBaseError>;
+  readonly updateChannel: (id: string, updates: Partial<Omit<ChannelRecord, 'id' | 'created' | 'updated'>>) => Effect.Effect<ChannelRecord, PocketBaseError>;
+  readonly activateChannel: (id: string) => Effect.Effect<ChannelRecord, PocketBaseError>;
   readonly isAuthenticated: () => boolean;
   readonly authenticateAsAdmin: (email: string, password: string) => Effect.Effect<void, PocketBaseError>;
-  readonly getPendingBatch: (channelId: string) => Effect.Effect<any, PocketBaseError>;
-  readonly createBatch: (channelId: string) => Effect.Effect<any, PocketBaseError>;
-  readonly getStagedVideos: (batchId: string) => Effect.Effect<any[], PocketBaseError>;
-  readonly saveStagedVideo: (video: any) => Effect.Effect<any, PocketBaseError>;
+  readonly getPendingBatch: (channelId: string) => Effect.Effect<BatchRecord, PocketBaseError>;
+  readonly createBatch: (channelId: string) => Effect.Effect<BatchRecord, PocketBaseError>;
+  readonly getStagedVideos: (batchId: string) => Effect.Effect<StagedVideoRecord[], PocketBaseError>;
+  readonly saveStagedVideo: (video: Partial<StagedVideoRecord> & { id?: string }) => Effect.Effect<StagedVideoRecord, PocketBaseError>;
   readonly deleteStagedVideo: (id: string) => Effect.Effect<void, PocketBaseError>;
-  readonly getSetting: (key: string) => Effect.Effect<any, PocketBaseError>;
-  readonly updateSetting: (key: string, value: any) => Effect.Effect<void, PocketBaseError>;
+  readonly getSetting: (key: string) => Effect.Effect<SettingRecord, PocketBaseError>;
+  readonly updateSetting: (key: string, value: unknown) => Effect.Effect<void, PocketBaseError>;
 }
 
 export const PocketBaseService = Context.GenericTag<PocketBaseService>('PocketBaseService');
@@ -41,17 +52,17 @@ export const createPocketBaseServiceLive = (url: string) => {
     {
       getChannels: () =>
         Effect.tryPromise({
-          try: () => pb.collection('s_channels').getFullList(),
+          try: () => pb.collection('s_channels').getFullList() as Promise<ChannelRecord[]>,
           catch: (error) => new PocketBaseError(error),
         }),
       createChannel: (channel) =>
         Effect.tryPromise({
-          try: () => pb.collection('s_channels').create(channel),
+          try: () => pb.collection('s_channels').create(channel) as Promise<ChannelRecord>,
           catch: (error) => new PocketBaseError(error),
         }),
       updateChannel: (id, updates) =>
         Effect.tryPromise({
-          try: () => pb.collection('s_channels').update(id, updates),
+          try: () => pb.collection('s_channels').update(id, updates) as Promise<ChannelRecord>,
           catch: (error) => new PocketBaseError(error),
         }),
       activateChannel: (id) =>
@@ -59,7 +70,7 @@ export const createPocketBaseServiceLive = (url: string) => {
           try: () => pb.collection('s_channels').update(id, { 
             status: 'active', 
             last_sync_at: new Date().toISOString() 
-          }),
+          }) as Promise<ChannelRecord>,
           catch: (error) => new PocketBaseError(error),
         }),
       isAuthenticated: () => pb.authStore.isValid,
@@ -69,15 +80,15 @@ export const createPocketBaseServiceLive = (url: string) => {
             try {
               // Try 0.23+ Superusers
               await pb.collection('_superusers').authWithPassword(email, password);
-            } catch (e: any) {
-              if (e.status === 404) {
+            } catch (e: unknown) {
+              if (e && typeof e === 'object' && 'status' in e && (e as { status: number }).status === 404) {
                 // Fallback for legacy Admins (< 0.23.0) with newer SDK (>= 0.23.0)
                 const res = await fetch(`${url}/api/admins/auth-with-password`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ email, password })
                 });
-                const data = await res.json();
+                const data = await res.json() as { token: string; admin: unknown; message?: string };
                 if (!res.ok) throw new Error(data.message || 'Legacy auth failed');
                 pb.authStore.save(data.token, data.admin);
               } else {
@@ -89,26 +100,27 @@ export const createPocketBaseServiceLive = (url: string) => {
         }),
       getPendingBatch: (channelId) =>
         Effect.tryPromise({
-          try: () => pb.collection('s_batches').getFirstListItem(`channel_id="${channelId}" && status="pending"`),
+          try: () => pb.collection('s_batches').getFirstListItem(`channel_id="${channelId}" && status="pending"`) as Promise<BatchRecord>,
           catch: (error) => new PocketBaseError(error),
         }),
       createBatch: (channelId) =>
         Effect.tryPromise({
-          try: () => pb.collection('s_batches').create({ channel_id: channelId, status: 'pending' }),
+          try: () => pb.collection('s_batches').create({ channel_id: channelId, status: 'pending' }) as Promise<BatchRecord>,
           catch: (error) => new PocketBaseError(error),
         }),
       getStagedVideos: (batchId) =>
         Effect.tryPromise({
-          try: () => pb.collection('s_staged_videos').getFullList({ filter: `batch_id="${batchId}"`, sort: 'sort_order' }),
+          try: () => pb.collection('s_staged_videos').getFullList({ filter: `batch_id="${batchId}"`, sort: 'sort_order' }) as Promise<StagedVideoRecord[]>,
           catch: (error) => new PocketBaseError(error),
         }),
       saveStagedVideo: (video) =>
         Effect.tryPromise({
           try: () => {
             console.log("DEBUG: PocketBase.saveStagedVideo sending:", JSON.stringify(video));
-            return video.id 
+            const promise = video.id 
               ? pb.collection('s_staged_videos').update(video.id, video)
               : pb.collection('s_staged_videos').create(video);
+            return promise as Promise<StagedVideoRecord>;
           },
           catch: (error) => new PocketBaseError(error),
         }),
@@ -119,7 +131,7 @@ export const createPocketBaseServiceLive = (url: string) => {
         }),
       getSetting: (key) =>
         Effect.tryPromise({
-          try: () => pb.collection('t_app_settings').getFirstListItem(`key="${key}"`),
+          try: () => pb.collection('t_app_settings').getFirstListItem(`key="${key}"`) as Promise<SettingRecord>,
           catch: (error) => new PocketBaseError(error),
         }),
       updateSetting: (key, value) =>

@@ -78,7 +78,6 @@ get-pb:
         chmod +x pocketbase || true
         [ -f pocketbase.exe ] && chmod +x pocketbase.exe || true
         echo "✅ PocketBase downloaded."
-    fi
 
 # Regenerate TypeScript bindings from Rust source
 gen-bindings:

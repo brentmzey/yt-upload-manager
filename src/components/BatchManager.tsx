@@ -3,8 +3,8 @@ import { Effect, Layer } from 'effect';
 import { YouTubeService, YouTubeServiceLive, processBatch } from '../lib/youtube/service';
 import { LoggerService, LoggerServiceLive, logInfo, logError } from '../lib/logger';
 import { VideoMetadataSchema } from '../lib/channel/config';
-import { PocketBaseService, PocketBaseServiceLive } from '../lib/pocketbase';
-import { Option } from 'effect';
+import { PocketBaseService, PocketBaseServiceLive, ChannelRecord } from '../lib/pocketbase';
+import { Option, Chunk } from 'effect';
 import { 
   RefreshCw, CheckCircle2, XCircle, Loader2, AlertTriangle, 
   Play, RotateCcw, Upload, FileVideo, Trash2, ExternalLink,
@@ -12,6 +12,7 @@ import {
   CheckSquare, Check
 } from 'lucide-react';
 import { decompressFromBrotliB64, compressToBrotliB64 } from '../lib/compression';
+import { stagedVideoToDomain } from '../lib/mappers';
 import type { YouTubeVideoDetails } from '../bindings/youtube_types';
 import { v4 as uuidv4 } from 'uuid';
 import { useTenant } from '../lib/tenant_context';
@@ -100,7 +101,7 @@ const createMockThumbnail = (title: string, color: string): File => {
 
 export const BatchManager: React.FC = () => {
   const [mode, setMode] = useState<'upload' | 'schedule'>('schedule');
-  const [channels, setChannels] = useState<any[]>([]);
+  const [channels, setChannels] = useState<ChannelRecord[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string>('');
   const [tasks, setTasks] = useState<BatchTask[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -150,57 +151,55 @@ export const BatchManager: React.FC = () => {
       const loadedTasks: BatchTask[] = [];
 
       for (const sv of stagedVideos) {
-        let description = sv.description_brotli_b64 || '';
-        if (description) {
-          try {
-            description = yield* _(decompressFromBrotliB64(description));
-          } catch (e) {
-            const logger = yield* _(LoggerService);
-            yield* _(logger.error(`Failed to decompress description for ${sv.title}`, {}, e));
-          }
-        }
+        const metadata = yield* _(
+          stagedVideoToDomain(sv).pipe(
+            Effect.catchAll(() => 
+              Effect.succeed({
+                job_type: sv.job_type,
+                title: sv.title,
+                description: '',
+                privacyStatus: sv.privacyStatus,
+                license: 'youtube' as const,
+                embeddable: true,
+                publicStatsViewable: true,
+                madeForKids: false,
+                containsSyntheticMedia: false,
+                paidProductPlacement: false,
+                tags: [],
+                categoryId: '22',
+                subDetails: {},
+                thumbnailUrl: Option.none(),
+                scheduledStartTime: Option.none(),
+                scheduledEndTime: Option.none(),
+                publishAt: Option.none(),
+                recordingDate: Option.none(),
+                language: Option.none(),
+                defaultLanguage: Option.none(),
+                defaultAudioLanguage: Option.none(),
+                latencyPreference: Option.none(),
+                enableAutoStart: Option.none(),
+                enableAutoStop: Option.none(),
+                enableDvr: Option.none(),
+                enableContentEncryption: Option.none(),
+                startWithLowLatency: Option.none(),
+                recordFromStart: Option.none(),
+                enableMonitorStream: Option.none(),
+                broadcastStreamDelayMs: Option.none(),
+                projection: Option.none(),
+                localizations: Option.none(),
+              })
+            )
+          )
+        );
 
         loadedTasks.push({
           id: uuidv4(),
           pbId: sv.id,
           status: sv.status,
           created: sv.created,
-          finishedAt: sv.finished_at,
-          error: sv.error_message,
-          metadata: {
-            job_type: (sv as any).job_type || (sv.scheduledStartTime ? 'LiveBroadcast' : 'VideoUpload'),
-            title: sv.title,
-            description,
-            privacyStatus: sv.privacyStatus,
-            license: sv.license || 'youtube',
-            embeddable: sv.embeddable,
-            publicStatsViewable: sv.publicStatsViewable,
-            madeForKids: sv.madeForKids,
-            containsSyntheticMedia: false,
-            paidProductPlacement: false,
-            tags: sv.tags || [],
-            categoryId: sv.categoryId || '22',
-            subDetails: {},
-            thumbnailUrl: Option.none(),
-            scheduledStartTime: sv.scheduledStartTime ? Option.some(sv.scheduledStartTime) : Option.none(),
-            scheduledEndTime: sv.scheduledEndTime ? Option.some(sv.scheduledEndTime) : Option.none(),
-            publishAt: Option.none(),
-            recordingDate: Option.none(),
-            language: sv.language ? Option.some(sv.language) : Option.some('en'),
-            defaultLanguage: sv.defaultLanguage ? Option.some(sv.defaultLanguage) : Option.none(),
-            defaultAudioLanguage: sv.defaultAudioLanguage ? Option.some(sv.defaultAudioLanguage) : Option.none(),
-            latencyPreference: sv.latencyPreference ? Option.some(sv.latencyPreference) : Option.some('normal'),
-            enableAutoStart: sv.enableAutoStart ? Option.some(sv.enableAutoStart) : Option.some(false),
-            enableAutoStop: sv.enableAutoStop ? Option.some(sv.enableAutoStop) : Option.some(false),
-            enableDvr: sv.enableDvr ? Option.some(sv.enableDvr) : Option.some(true),
-            enableContentEncryption: sv.enableContentEncryption ? Option.some(sv.enableContentEncryption) : Option.some(false),
-            startWithLowLatency: sv.startWithLowLatency ? Option.some(sv.startWithLowLatency) : Option.some(false),
-            recordFromStart: sv.recordFromStart ? Option.some(sv.recordFromStart) : Option.some(true),
-            enableMonitorStream: sv.enableMonitorStream ? Option.some(sv.enableMonitorStream) : Option.some(true),
-            broadcastStreamDelayMs: sv.broadcastStreamDelayMs ? Option.some(sv.broadcastStreamDelayMs) : Option.some(0),
-            projection: sv.projection ? Option.some(sv.projection) : Option.some('rectangular'),
-            localizations: Option.none(),
-          },
+          finishedAt: Option.getOrNull(sv.finished_at) || undefined,
+          error: Option.getOrNull(sv.error_message) || undefined,
+          metadata,
         });
       }
       
@@ -363,11 +362,11 @@ export const BatchManager: React.FC = () => {
         categoryId: '20', // Gaming
         privacyStatus: 'public',
         tags: ['esports', 'gaming', 'championship', 'live-gaming', 'final-showdown'],
-        latencyPreference: 'ultraLow', // Critical for active esports chat!
-        enableAutoStart: true,
-        enableAutoStop: true,
-        enableDvr: true,
-        broadcastStreamDelayMs: 0,
+        latencyPreference: Option.some('ultraLow'), // Critical for active esports chat!
+        enableAutoStart: Option.some(true),
+        enableAutoStop: Option.some(true),
+        enableDvr: Option.some(true),
+        broadcastStreamDelayMs: Option.some(0),
       };
     } else if (type === 'keynote') {
       presetTitle = 'NextGen AI Keynote 2026: Designing the Cognitive Decade';
@@ -377,11 +376,11 @@ export const BatchManager: React.FC = () => {
         categoryId: '28', // Science & Tech
         privacyStatus: 'public',
         tags: ['keynote', 'artificial-intelligence', 'agentic-ai', 'technology', 'innovation'],
-        latencyPreference: 'low', // Great balance for premium high-fidelity stream
-        enableAutoStart: false,
-        enableAutoStop: false,
-        enableDvr: true,
-        broadcastStreamDelayMs: 10000, // 10s delay for live moderation/safety!
+        latencyPreference: Option.some('low'), // Great balance for premium high-fidelity stream
+        enableAutoStart: Option.some(false),
+        enableAutoStop: Option.some(false),
+        enableDvr: Option.some(true),
+        broadcastStreamDelayMs: Option.some(10000), // 10s delay for live moderation/safety!
       };
     } else {
       presetTitle = 'The Late Night Codecast: Episode 42 - Talking Functional TypeScript';
@@ -391,11 +390,11 @@ export const BatchManager: React.FC = () => {
         categoryId: '22', // People & Blogs
         privacyStatus: 'unlisted', // Exclusive live link!
         tags: ['programming', 'typescript', 'functional-programming', 'podcast', 'live-qa'],
-        latencyPreference: 'normal', // Normal latency for highest resolution
-        enableAutoStart: true,
-        enableAutoStop: false,
-        enableDvr: true,
-        broadcastStreamDelayMs: 0,
+        latencyPreference: Option.some('normal'), // Normal latency for highest resolution
+        enableAutoStart: Option.some(true),
+        enableAutoStop: Option.some(false),
+        enableDvr: Option.some(true),
+        broadcastStreamDelayMs: Option.some(0),
       };
     }
 
@@ -412,7 +411,7 @@ export const BatchManager: React.FC = () => {
         ...createDefaultMetadata(presetTitle, 0),
         ...presetMeta,
         scheduledStartTime: Option.some(tomorrow.toISOString()),
-      } as any,
+      },
       status: 'idle',
       thumbnailFile,
     };
@@ -574,7 +573,7 @@ export const BatchManager: React.FC = () => {
 
       try {
         const result = await Effect.runPromise(Effect.provide(program, appLayer));
-        const videoIdArray = Array.from(result as any) as string[];
+        const videoIdArray = Chunk.toArray(result);
         const videoId = videoIdArray[0];
 
         // Fetch details
@@ -932,7 +931,7 @@ export const BatchManager: React.FC = () => {
                                           <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Privacy Status</label>
                                           <select 
                                             value={task.metadata.privacyStatus}
-                                            onChange={(e) => updateTaskMetadata(task.id, { privacyStatus: e.target.value as any })}
+                                            onChange={(e) => updateTaskMetadata(task.id, { privacyStatus: e.target.value as 'public' | 'private' | 'unlisted' })}
                                             className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
                                           >
                                             <option value="private">Private</option>
@@ -1067,7 +1066,7 @@ export const BatchManager: React.FC = () => {
                                             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Latency Preference</label>
                                             <select 
                                               value={Option.getOrNull(task.metadata.latencyPreference) || 'normal'}
-                                              onChange={(e) => updateTaskMetadata(task.id, { latencyPreference: Option.some(e.target.value as any) })}
+                                              onChange={(e) => updateTaskMetadata(task.id, { latencyPreference: Option.some(e.target.value as 'normal' | 'low' | 'ultraLow') })}
                                               className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
                                             >
                                               <option value="normal">Normal (Best Quality)</option>
@@ -1079,7 +1078,7 @@ export const BatchManager: React.FC = () => {
                                             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Projection</label>
                                             <select 
                                               value={Option.getOrNull(task.metadata.projection) || 'rectangular'}
-                                              onChange={(e) => updateTaskMetadata(task.id, { projection: Option.some(e.target.value as any) })}
+                                              onChange={(e) => updateTaskMetadata(task.id, { projection: Option.some(e.target.value as 'rectangular' | '360') })}
                                               className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none shadow-sm"
                                             >
                                               <option value="rectangular">Rectangular (Std)</option>
@@ -1108,7 +1107,7 @@ export const BatchManager: React.FC = () => {
                                             <input 
                                               type="checkbox" 
                                               className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                              checked={Option.getOrElse((task.metadata as any)[opt.key], () => false)} 
+                                              checked={Option.getOrElse(task.metadata[opt.key as keyof typeof VideoMetadataSchema.Type] as Option.Option<boolean>, () => false)} 
                                               onChange={(e) => updateTaskMetadata(task.id, { [opt.key]: Option.some(e.target.checked) })}
                                             />
                                             <div className="flex flex-col">
@@ -1129,7 +1128,7 @@ export const BatchManager: React.FC = () => {
                                             <input 
                                               type="checkbox" 
                                               className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                              checked={Option.getOrElse((task.metadata as any)[opt.key], () => false)} 
+                                              checked={Option.getOrElse(task.metadata[opt.key as keyof typeof VideoMetadataSchema.Type] as Option.Option<boolean>, () => false)} 
                                               onChange={(e) => updateTaskMetadata(task.id, { [opt.key]: Option.some(e.target.checked) })}
                                             />
                                             <div className="flex flex-col">
@@ -1228,7 +1227,7 @@ export const BatchManager: React.FC = () => {
                   <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Privacy Status</label>
                   <select 
                     value={bulkEditData.privacyStatus || ''}
-                    onChange={(e) => setBulkEditData({ ...bulkEditData, privacyStatus: e.target.value as any })}
+                    onChange={(e) => setBulkEditData({ ...bulkEditData, privacyStatus: e.target.value as 'public' | 'private' | 'unlisted' })}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none"
                   >
                     <option value="">-- Do Not Change --</option>

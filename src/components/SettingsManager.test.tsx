@@ -40,25 +40,25 @@ vi.mock('../lib/pocketbase', async (importOriginal) => {
   const MockLayer = Layer.succeed(
     actual.PocketBaseService,
     {
-      getChannels: () => Effect.succeed([]),
+      getChannels: () => Effect.succeed([] as actual.ChannelRecord[]),
       isAuthenticated: () => false,
       authenticateAsAdmin: () => Effect.void,
-      getPendingBatch: () => Effect.succeed({ id: 'batch-1' }),
-      createBatch: () => Effect.succeed({ id: 'batch-1' }),
-      getStagedVideos: () => Effect.succeed([]),
-      saveStagedVideo: (v: any) => Effect.succeed({ id: v.id || 'new-id' }),
+      getPendingBatch: () => Effect.succeed({ id: 'batch-1' } as actual.BatchRecord),
+      createBatch: () => Effect.succeed({ id: 'batch-1' } as actual.BatchRecord),
+      getStagedVideos: () => Effect.succeed([] as actual.StagedVideoRecord[]),
+      saveStagedVideo: (v: Partial<actual.StagedVideoRecord>) => Effect.succeed({ id: v.id || 'new-id' } as actual.StagedVideoRecord),
       deleteStagedVideo: () => Effect.void,
       getSetting: (key: string) => {
-        if (key === 'AUTO_ENRICHMENT') return Effect.succeed({ value: 'true' });
-        if (key === 'TAURI_NATIVE_BACKEND') return Effect.succeed({ value: 'false' });
-        if (key === 'MAX_CONCURRENT_UPLOADS') return Effect.succeed({ value: '3' });
-        if (key === 'YT_UPLOAD_RETRY_LIMIT') return Effect.succeed({ value: '5' });
-        if (key === 'YT_DEFAULT_PRIVACY') return Effect.succeed({ value: 'private' });
-        return Effect.fail(new Error('Not found') as any);
+        if (key === 'AUTO_ENRICHMENT') return Effect.succeed({ value: 'true' } as actual.SettingRecord);
+        if (key === 'TAURI_NATIVE_BACKEND') return Effect.succeed({ value: 'false' } as actual.SettingRecord);
+        if (key === 'MAX_CONCURRENT_UPLOADS') return Effect.succeed({ value: '3' } as actual.SettingRecord);
+        if (key === 'YT_UPLOAD_RETRY_LIMIT') return Effect.succeed({ value: '5' } as actual.SettingRecord);
+        if (key === 'YT_DEFAULT_PRIVACY') return Effect.succeed({ value: 'private' } as actual.SettingRecord);
+        return Effect.fail(new actual.PocketBaseError(new Error('Not found')));
       },
       updateSetting: () => Effect.void,
-      activateChannel: (id: string) => Effect.succeed({ id, status: 'active' }),
-      updateChannel: (id: string, updates: any) => Effect.succeed({ id, ...updates }),
+      activateChannel: (id: string) => Effect.succeed({ id, status: 'active' } as actual.ChannelRecord),
+      updateChannel: (id: string, updates: Partial<Omit<actual.ChannelRecord, 'id' | 'created' | 'updated'>>) => Effect.succeed({ id, ...updates } as actual.ChannelRecord),
     }
   );
 
@@ -72,6 +72,8 @@ vi.mock('../lib/pocketbase', async (importOriginal) => {
 vi.mock('../lib/tenant_context', () => ({
   useTenant: vi.fn()
 }));
+
+import { PocketBaseService, ChannelRecord, BatchRecord, StagedVideoRecord, SettingRecord, PocketBaseError } from '../lib/pocketbase';
 
 describe('SettingsManager Component', () => {
   const updateSettingMock = vi.fn(() => Effect.void);
@@ -88,31 +90,31 @@ describe('SettingsManager Component', () => {
         Layer.succeed(
           PocketBaseService,
           {
-            getChannels: () => Effect.succeed([]),
+            getChannels: () => Effect.succeed([] as ChannelRecord[]),
             isAuthenticated: () => false,
             authenticateAsAdmin: () => Effect.void,
-            getPendingBatch: () => Effect.succeed({ id: 'batch-1' }),
-            createBatch: () => Effect.succeed({ id: 'batch-1' }),
-            getStagedVideos: () => Effect.succeed([]),
-            saveStagedVideo: (v: any) => Effect.succeed({ id: v.id || 'new-id' }),
+            getPendingBatch: () => Effect.succeed({ id: 'batch-1' } as BatchRecord),
+            createBatch: () => Effect.succeed({ id: 'batch-1' } as BatchRecord),
+            getStagedVideos: () => Effect.succeed([] as StagedVideoRecord[]),
+            saveStagedVideo: (v: Partial<StagedVideoRecord>) => Effect.succeed({ id: v.id || 'new-id' } as StagedVideoRecord),
             deleteStagedVideo: () => Effect.void,
             getSetting: (key: string) => {
-              if (key === 'AUTO_ENRICHMENT') return Effect.succeed({ value: 'true' });
-              if (key === 'TAURI_NATIVE_BACKEND') return Effect.succeed({ value: 'false' });
-              if (key === 'MAX_CONCURRENT_UPLOADS') return Effect.succeed({ value: '3' });
-              if (key === 'YT_UPLOAD_RETRY_LIMIT') return Effect.succeed({ value: '5' });
-              if (key === 'YT_DEFAULT_PRIVACY') return Effect.succeed({ value: 'private' });
-              return Effect.fail(new Error('Not found'));
+              if (key === 'AUTO_ENRICHMENT') return Effect.succeed({ value: 'true' } as SettingRecord);
+              if (key === 'TAURI_NATIVE_BACKEND') return Effect.succeed({ value: 'false' } as SettingRecord);
+              if (key === 'MAX_CONCURRENT_UPLOADS') return Effect.succeed({ value: '3' } as SettingRecord);
+              if (key === 'YT_UPLOAD_RETRY_LIMIT') return Effect.succeed({ value: '5' } as SettingRecord);
+              if (key === 'YT_DEFAULT_PRIVACY') return Effect.succeed({ value: 'private' } as SettingRecord);
+              return Effect.fail(new PocketBaseError(new Error('Not found')));
             },
             updateSetting: updateSettingMock,
-            activateChannel: (id: string) => Effect.succeed({ id, status: 'active' }),
-            updateChannel: (id: string, updates: any) => Effect.succeed({ id, ...updates }),
+            activateChannel: (id: string) => Effect.succeed({ id, status: 'active' } as ChannelRecord),
+            updateChannel: (id: string, updates: Partial<Omit<ChannelRecord, 'id' | 'created' | 'updated'>>) => Effect.succeed({ id, ...updates } as ChannelRecord),
           }
         ),
         LoggerServiceLive,
         YouTubeServiceLive
       )
-    } as any);
+    } as unknown as ReturnType<typeof useTenant>);
   });
 
   it('renders settings details dynamically from database store', async () => {

@@ -184,7 +184,7 @@ export const SettingsManager: React.FC = () => {
             </div>
             <select
               value={settings.defaultPrivacy}
-              onChange={(e) => setSettings({ ...settings, defaultPrivacy: e.target.value as any })}
+              onChange={(e) => setSettings({ ...settings, defaultPrivacy: e.target.value as 'public' | 'private' | 'unlisted' })}
               className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl p-2.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-slate-100"
             >
               <option value="private">Private</option>
