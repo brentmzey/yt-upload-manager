@@ -370,7 +370,7 @@ jobs:
             # Provide dummy team ID to satisfy init if secret is missing
             bun run tauri ios init --ci
           fi
-          # Disable Xcode code signing directly inside the generated project configuration
+          # Disable Xcode code signing and inject system PATH into the build phase script directly inside the generated project configuration
           python3 -c '
           import os
           filepath = "src-tauri/gen/apple/app.xcodeproj/project.pbxproj"
@@ -379,9 +379,14 @@ jobs:
                   content = f.read()
               overrides = "\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"\";"
               new_content = content.replace("buildSettings = {", "buildSettings = {" + overrides)
+              
+              current_path = os.environ.get("PATH", "")
+              path_override = f"export PATH=\\\"{current_path}\\\"; "
+              new_content = new_content.replace("shellScript = \"bun tauri ios xcode-script", f"shellScript = \"{path_override}bun tauri ios xcode-script")
+              
               with open(filepath, "w") as f:
                   f.write(new_content)
-              print("Successfully disabled code signing in project.pbxproj")
+              print("Successfully disabled code signing and injected PATH into project.pbxproj")
           else:
               print("project.pbxproj not found!")
           '
