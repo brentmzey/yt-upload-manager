@@ -396,7 +396,11 @@ jobs:
           # Pre-build web frontend so the Xcode bundle assets are up to date
           bun run build
           # Compile the iOS Simulator application using Tauri CLI to ensure the companion WebSocket server is active
-          bun run tauri ios build --target aarch64-sim --ci
+          if ! bun run tauri ios build --target aarch64-sim --ci > ios_build.log 2>&1; then
+            echo "❌ iOS Build Failed! Printing build log:"
+            cat ios_build.log
+            exit 1
+          fi
           # Zip the simulator .app bundle so it can be uploaded as a file to the GitHub Release
           cd src-tauri/gen/apple/build/Release-iphonesimulator
           zip -r yt-upload-manager-ios-simulator.zip yt-upload-manager.app
