@@ -1,10 +1,10 @@
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches: [ main, development, 'feature/**' ]
-  pull_request:
-    branches: [ main, development, 'feature/**' ]
+  # push:
+    # branches: [ main, development, 'feature/**' ]
+  # pull_request:
+    # branches: [ main, development, 'feature/**' ]
   workflow_dispatch:
 
 # Required to create releases
